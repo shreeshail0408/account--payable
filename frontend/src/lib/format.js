@@ -143,3 +143,33 @@ export function daysFromToday(value) {
   const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   return Math.round((target - start) / 86400000);
 }
+
+const RELATIVE_UNITS = [
+  ["year", 365 * 24 * 3600],
+  ["month", 30 * 24 * 3600],
+  ["week", 7 * 24 * 3600],
+  ["day", 24 * 3600],
+  ["hour", 3600],
+  ["minute", 60],
+];
+
+/** formatRelativeTime(fiveMinutesAgo) -> "5 min ago"; under a minute -> "just now". */
+export function formatRelativeTime(value, now = new Date()) {
+  const date = toDate(value);
+  if (!date) {
+    return EMPTY;
+  }
+  const seconds = Math.round((date.getTime() - now.getTime()) / 1000);
+  if (Math.abs(seconds) < 45) {
+    return "just now";
+  }
+  const formatter = getFormatter("relative", () => (
+    new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto", style: "short" })
+  ));
+  for (const [unit, size] of RELATIVE_UNITS) {
+    if (Math.abs(seconds) >= size) {
+      return formatter.format(Math.round(seconds / size), unit);
+    }
+  }
+  return formatter.format(Math.round(seconds / 60) || -1, "minute");
+}

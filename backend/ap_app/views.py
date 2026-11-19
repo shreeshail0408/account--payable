@@ -582,7 +582,8 @@ class InvoiceViewSet(BaseViewSet):
         invoice = self.get_object()
         if invoice.status in (Invoice.Status.APPROVED, Invoice.Status.PAID, Invoice.Status.REJECTED):
             return Response({"detail": "This invoice can no longer be edited or re-reviewed."}, status=409)
-        if request.data.get("confirmed") is not True:
+        review = ExtractionReviewSerializer(data=request.data)
+        if not review.is_valid() or review.validated_data["confirmed"] is not True:
             return Response({"confirmed": ["Confirm that the displayed invoice fields were checked against the source document."]}, status=400)
         records = record_extraction_verification(invoice, request.user)
         audit(request.user, "invoice.extraction_reviewed", invoice, {
@@ -646,6 +647,21 @@ class ApprovalViewSet(viewsets.ReadOnlyModelViewSet):
         if self.request.user.role not in (User.Roles.ADMIN, User.Roles.AUDITOR):
             queryset = queryset.filter(approver=self.request.user)
         return queryset
+
+    @action(detail=False, methods=["get"], url_path="pending-count")
+    def pending_count(self, request):
+        """Approvals the current user can act on now (used for the sidebar badge).
+
+        A step becomes actionable when the workflow notifies it and sets due_at, so later
+        sequential steps are not counted until earlier ones are decided.
+        """
+        count = Approval.objects.filter(
+            approver=request.user,
+            status__in=[Approval.Status.PENDING, Approval.Status.ESCALATED],
+            due_at__isnull=False,
+            invoice__status=Invoice.Status.PENDING_APPROVAL,
+        ).count()
+        return Response({"count": count})
 
     @action(detail=False, methods=["get"])
     def reminders(self, request):
@@ -750,6 +766,8 @@ class ApprovalViewSet(viewsets.ReadOnlyModelViewSet):
 class PaymentViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Payment.objects.select_related("invoice", "invoice__vendor").all().order_by("-requested_at")
     serializer_class = PaymentSerializer
+    # Role checks (ACCOUNTANT/ADMIN actions, AUDITOR read) run before any request validation.
+    permission_classes = [APRolePermission]
     filter_backends = [SearchFilter]
     search_fields = ["reference", "bank_reference", "invoice__invoice_number", "status"]
 
@@ -861,6 +879,15 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
     def get_queryset(self):
         return APNotification.objects.filter(recipient=self.request.user)
+
+    @action(detail=False, methods=["get"], url_path="unread-count")
+    def unread_count(self, request):
+        return Response({"count": self.get_queryset().filter(read_at__isnull=True).count()})
+
+    @action(detail=False, methods=["post"], url_path="mark-all-read")
+    def mark_all_read(self, request):
+        marked = self.get_queryset().filter(read_at__isnull=True).update(read_at=timezone.now())
+        return Response({"marked": marked})
 
     @action(detail=True, methods=["post"])
     def mark_read(self, request, pk=None):

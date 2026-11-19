@@ -1,3 +1,4 @@
+from django.core.serializers.json import DjangoJSONEncoder
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, RegexValidator
@@ -141,7 +142,8 @@ class Invoice(models.Model):
     original_filename = models.CharField(max_length=255, blank=True)
     ocr_text = models.TextField(blank=True)
     ocr_accuracy = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    ocr_suggestions = models.JSONField(default=dict, blank=True)
+    # Extraction returns Decimal amounts; DjangoJSONEncoder stores them as strings.
+    ocr_suggestions = models.JSONField(default=dict, blank=True, encoder=DjangoJSONEncoder)
     extracted_gstin = models.CharField(max_length=15, blank=True)
     extraction_reviewed_at = models.DateTimeField(null=True, blank=True)
     extraction_reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="invoices_extraction_reviewed")

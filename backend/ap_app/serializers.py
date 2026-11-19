@@ -1,5 +1,6 @@
 import re
 from rest_framework import serializers
+from rest_framework.validators import UniqueTogetherValidator
 from django.db import transaction
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -35,6 +36,11 @@ class EmployeeSerializer(serializers.ModelSerializer):
         validate_password(password)
         validated_data["is_active"] = False
         return User.objects.create_user(password=password, **validated_data)
+
+
+class ExtractionReviewSerializer(serializers.Serializer):
+    """Parses `confirmed` the DRF way, so JSON true and form-encoded "true" both work."""
+    confirmed = serializers.BooleanField(required=False, default=False)
 
 
 class EmployeeActivationSerializer(serializers.Serializer):
@@ -203,6 +209,17 @@ class InvoiceSerializer(serializers.ModelSerializer):
         model = Invoice
         fields = "__all__"
         read_only_fields = ("content_hash", "ocr_text", "ocr_accuracy", "ocr_suggestions", "extraction_reviewed_at", "extraction_reviewed_by", "approval_completed_at", "exceptions", "created_by", "status", "lines")
+    def get_validators(self):
+        # DRF auto-adds a UniqueTogetherValidator for the (vendor, invoice_number) constraint,
+        # which runs before validate() and replaces our field-specific duplicate message with
+        # a generic non_field_error. validate() performs the same check, so drop that one.
+        return [
+            validator for validator in super().get_validators()
+            if not (
+                isinstance(validator, UniqueTogetherValidator)
+                and set(validator.fields) == {"vendor", "invoice_number"}
+            )
+        ]
     def validate_invoice_number(self, value):
         return value.strip() or None if value is not None else None
     def validate_extracted_gstin(self, value):
