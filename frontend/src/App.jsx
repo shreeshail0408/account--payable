@@ -25,7 +25,7 @@ const Styleguide = lazy(() => import("./pages/Styleguide"));
 
 /** `legacy: true` pages still use the old stylesheets and get the LegacyPage wrapper. */
 const PAGE_ROUTES = [
-  { nav: NAV_ITEMS.dashboard, Component: Dashboard, legacy: true },
+  { nav: NAV_ITEMS.dashboard, Component: Dashboard, legacy: false },
   { nav: NAV_ITEMS.invoices, Component: Invoices, legacy: true },
   { nav: NAV_ITEMS.vendors, Component: Vendors, legacy: true },
   { nav: NAV_ITEMS.purchaseOrders, Component: PurchaseOrders, legacy: true },

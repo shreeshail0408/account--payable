@@ -1,9 +1,62 @@
 import React,{useEffect,useState} from "react";
 import api from "../services/api";
 import {PageHeader,Modal,Status,Loader,Empty} from "../components/UI";
-import {Plus,Search,Upload} from "lucide-react";
+import {Plus,Search,Upload,X} from "lucide-react";
+import {useSearchParams} from "react-router-dom";
 import {useAuth} from "../App";
 import {useUrlIntent} from "../hooks/useUrlIntent";
+import {getStatusMeta} from "../components/status-badge";
+import {apiErrorMessage} from "../lib/api-errors";
+import {formatDate} from "../lib/format";
+
+/* List filters the dashboard links to; passed straight through to GET /invoices/. */
+const FILTER_KEYS = ["status", "aging", "outstanding", "due_before", "needs_review"];
+
+function filterLabel(key, value) {
+  switch (key) {
+    case "status":
+      return value.split(",").map((status) => getStatusMeta(status, "invoice").label).join(" or ");
+    case "aging":
+      return value === "Not yet due" ? "Not yet due" : `${value} days overdue`;
+    case "outstanding":
+      return "Unpaid (outstanding)";
+    case "due_before":
+      return `Due by ${formatDate(value)}`;
+    case "needs_review":
+      return "OCR extraction not reviewed";
+    default:
+      return `${key}: ${value}`;
+  }
+}
+
+function FilterChips({ filters, onRemove, onClear }) {
+  const entries = Object.entries(filters);
+  if (!entries.length) {
+    return null;
+  }
+  return (
+    <div className="filter-chips" role="group" aria-label="Active filters">
+      <span className="filter-chips-label">Filtered by</span>
+      {entries.map(([key, value]) => (
+        <button
+          key={key}
+          type="button"
+          className="filter-chip"
+          onClick={() => onRemove(key)}
+          aria-label={`Remove filter: ${filterLabel(key, value)}`}
+        >
+          {filterLabel(key, value)}
+          <X aria-hidden="true" />
+        </button>
+      ))}
+      {entries.length > 1 && (
+        <button type="button" className="link" onClick={onClear}>
+          Clear all
+        </button>
+      )}
+    </div>
+  );
+}
 
 function formatApiError(data){
  if(typeof data==="string")return data;
@@ -17,6 +70,24 @@ function formatApiError(data){
 export default function Invoices(){
  const [rows,setRows]=useState([]),[vendors,setVendors]=useState([]),[purchaseOrders,setPurchaseOrders]=useState([]),[loading,setLoading]=useState(true),[open,setOpen]=useState(false),[q,setQ]=useState(()=>new URLSearchParams(window.location.search).get("search")||""),[ocrInvoice,setOcrInvoice]=useState(null),[reviewFields,setReviewFields]=useState(null),[reviewLines,setReviewLines]=useState([]),[confirmReview,setConfirmReview]=useState(false),[erpConfigured,setErpConfigured]=useState(false),[actionError,setActionError]=useState("");
  const {user}=useAuth();
+ const [params,setParams]=useSearchParams();
+ const filters=Object.fromEntries(FILTER_KEYS.filter(key=>params.get(key)).map(key=>[key,params.get(key)]));
+ const filterKey=JSON.stringify(filters);
+ const [loadError,setLoadError]=useState("");
+ const removeFilter=(key)=>{
+  setParams(current=>{
+   const next=new URLSearchParams(current);
+   next.delete(key);
+   return next;
+  },{replace:true});
+ };
+ const clearFilters=()=>{
+  setParams(current=>{
+   const next=new URLSearchParams(current);
+   FILTER_KEYS.forEach(key=>next.delete(key));
+   return next;
+  },{replace:true});
+ };
  useUrlIntent({
   onSearch: setQ,
   onNew: () => {
@@ -26,15 +97,25 @@ export default function Invoices(){
  const [form,setForm]=useState({invoice_number:"",vendor:"",purchase_order:"",invoice_date:"",due_date:"",extracted_gstin:"",subtotal:"",tax_amount:"0",total_amount:"",match_type:"NONE"});
  const [lineItems,setLineItems]=useState([]);
  const [file,setFile]=useState(null),[bulk,setBulk]=useState(null),[bulkVendor,setBulkVendor]=useState(""),[ocrPreview,setOcrPreview]=useState(null),[ocrLoading,setOcrLoading]=useState(false),[formError,setFormError]=useState(""),[reviewConfirmed,setReviewConfirmed]=useState(false);
- const load=()=>api.get("/invoices/",{params:{search:q}}).then(r=>setRows(r.data.results||r.data)).finally(()=>setLoading(false));
+ const load=()=>api.get("/invoices/",{params:{search:q,...filters}})
+  .then(r=>{
+   setRows(r.data.results||r.data);
+   setLoadError("");
+  })
+  .catch(err=>{
+   setRows([]);
+   setLoadError(apiErrorMessage(err,{fallback:"Invoices couldn't be loaded."}));
+  })
+  .finally(()=>setLoading(false));
  useEffect(()=>{
+  setLoading(true);
   load();
   if(["ADMIN","AP_CLERK"].includes(user?.role)){
    api.get("/vendors/").then(r=>setVendors(r.data.results||r.data));
    api.get("/purchase-orders/").then(r=>setPurchaseOrders(r.data.results||r.data));
   }
   api.get("/integrations/status/").then(r=>setErpConfigured(r.data.erp.configured));
- },[q,user?.role]);
+ },[q,filterKey,user?.role]);
  const submit=async(e)=>{
   e.preventDefault();
   setFormError("");
@@ -90,10 +171,15 @@ export default function Invoices(){
  return <>
  <PageHeader title="Invoices" subtitle="Capture, OCR, validation and matching" action={["ADMIN","AP_CLERK"].includes(user?.role)&&<button className="primary" onClick={()=>setOpen(true)}><Plus/>New invoice</button>}/>
  {actionError&&<div className="alert error">{actionError}</div>}
+ <FilterChips filters={filters} onRemove={removeFilter} onClear={clearFilters}/>
  <div className="toolbar"><div className="search"><Search/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search invoices"/></div>
  {["ADMIN","AP_CLERK"].includes(user?.role)&&<><select value={bulkVendor} onChange={e=>setBulkVendor(e.target.value)}><option value="">Bulk vendor</option>{vendors.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</select>
  <label className="upload-btn"><Upload/>Bulk upload<input type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff" onChange={e=>{setBulk(e.target.files);}}/></label>{bulk&&<button className="secondary" onClick={bulkUpload}>Process {bulk.length}</button>}</>}</div>
- <div className="panel table-panel">{loading?<Loader/>:rows.length?<table><thead><tr><th>Invoice</th><th>Vendor</th><th>Due date</th><th>Amount</th><th>OCR</th><th>Status</th><th/></tr></thead><tbody>{rows.map(i=><tr key={i.id}><td><b>{i.invoice_number||"Needs review"}</b><small>{i.capture_source}</small></td><td>{i.vendor_name}</td><td>{i.due_date||"Missing"}</td><td>₹ {Number(i.total_amount).toLocaleString()}</td><td>{i.ocr_accuracy}% <button className="link" onClick={()=>openReview(i)}>Review</button>{i.extraction_reviewed_at&&<small>Human reviewed</small>}</td><td><Status value={i.status}/></td><td>{["ADMIN","AP_CLERK"].includes(user?.role)&&["MATCHED","PENDING_APPROVAL"].includes(i.status)&&<button className="link" onClick={()=>submitApproval(i.id)}>Submit</button>}{erpConfigured&&user?.role==="ADMIN"&&["APPROVED","PAID"].includes(i.status)&&<button className="link" onClick={()=>syncERP(i.id)}>Sync ERP</button>}</td></tr>)}</tbody></table>:<Empty/>}</div>
+ <div className="panel table-panel">{loading?<Loader/>:loadError?(
+  <div className="alert error" role="alert" style={{margin:16}}>
+   {loadError} <button className="link" onClick={()=>{setLoading(true);load();}}>Try again</button>
+  </div>
+ ):rows.length?<table><thead><tr><th>Invoice</th><th>Vendor</th><th>Due date</th><th>Amount</th><th>OCR</th><th>Status</th><th/></tr></thead><tbody>{rows.map(i=><tr key={i.id}><td><b>{i.invoice_number||"Needs review"}</b><small>{i.capture_source}</small></td><td>{i.vendor_name}</td><td>{i.due_date||"Missing"}</td><td>₹ {Number(i.total_amount).toLocaleString()}</td><td>{i.ocr_accuracy}% <button className="link" onClick={()=>openReview(i)}>Review</button>{i.extraction_reviewed_at&&<small>Human reviewed</small>}</td><td><Status value={i.status}/></td><td>{["ADMIN","AP_CLERK"].includes(user?.role)&&["MATCHED","PENDING_APPROVAL"].includes(i.status)&&<button className="link" onClick={()=>submitApproval(i.id)}>Submit</button>}{erpConfigured&&user?.role==="ADMIN"&&["APPROVED","PAID"].includes(i.status)&&<button className="link" onClick={()=>syncERP(i.id)}>Sync ERP</button>}</td></tr>)}</tbody></table>:<Empty text={Object.keys(filters).length||q?"No invoices match these filters.":"No invoices captured yet."}/>}</div>
  <Modal open={open} title="Capture invoice" onClose={()=>setOpen(false)}><form className="form-grid" onSubmit={submit}>
  {formError&&<div className="alert error span-2">{formError}</div>}
  <label>Invoice number<input required value={form.invoice_number} onChange={e=>setForm({...form,invoice_number:e.target.value})}/></label>

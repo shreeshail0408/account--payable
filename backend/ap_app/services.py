@@ -383,6 +383,14 @@ def _percent_of(difference, base):
 
 AGING_BUCKET_LABELS = ("Not yet due", "0-30", "31-60", "61-90", "90+")
 
+# Invoices that still have to be paid and therefore count toward AP aging / outstanding payables.
+OUTSTANDING_INVOICE_STATUSES = ("PENDING_APPROVAL", "APPROVED", "MATCHED")
+
+
+def outstanding_invoices(queryset):
+    """Unpaid invoices with a due date: the population the aging buckets are computed over."""
+    return queryset.filter(status__in=OUTSTANDING_INVOICE_STATUSES).exclude(due_date__isnull=True)
+
 
 def aging_bucket_filters(today):
     """Due-date filters for AP aging by days overdue (today - due_date).

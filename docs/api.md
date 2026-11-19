@@ -27,7 +27,7 @@ Approval-rule changes are administrator-only. Approvers cannot edit approval sta
 - `/api/vendors/{id}/full-bank-details/` (GET; administrator and accountant only; returns unmasked bank account and IFSC; every view is recorded as a `vendor.bank_details_viewed` audit event)
 - `/api/purchase-orders/`
 - `/api/grns/`
-- `/api/invoices/`
+- `/api/invoices/` (list filters, all optional: `search`, `status=A,B`, `outstanding=1`, `aging=<bucket>`, `due_before=YYYY-MM-DD`, `needs_review=1`; unknown values return 400)
 - `/api/invoices/bulk/`
 - `/api/invoices/email/`
 - `/api/invoices/ocr-preview/`
@@ -74,3 +74,14 @@ IMAP mailbox polling and SMTP delivery are management commands rather than HTTP 
 - `python manage.py process_approvals`
 
 Provider endpoints and bearer tokens are configured using the optional variables in `backend/.env.example`. Missing configuration returns an explicit service-unavailable response for outbound API actions; no live service credentials are included.
+
+Dashboard fields added for the redesigned dashboard (additive; existing fields unchanged):
+
+- `outstanding_amount`, `outstanding_count`: unpaid invoices with a due date (`PENDING_APPROVAL`, `APPROVED`, `MATCHED`); equals the sum of the `aging` buckets.
+- `average_ocr_confidence` (null when no invoice was OCR-captured), `ocr_confidence_invoice_count`, `ocr_review_pending_count`: Tesseract engine confidence averaged over OCR-captured invoices. A confidence, not accuracy.
+- `attention`: the caller's work queue, with only the sections their role can act on or audit. ADMIN gets all three; AP_CLERK gets `exceptions`; APPROVER gets `my_approvals`; ACCOUNTANT gets `payments_due`; AUDITOR gets `exceptions` and `payments_due`.
+  - `my_approvals`: `{count, items[{approval_id, invoice_id, invoice_number, vendor_name, total_amount, status, due_at, overdue}]}`. Lists the caller's actionable steps, oldest deadline first.
+  - `exceptions`: `{count, items[{invoice_id, invoice_number, vendor_name, total_amount, exception, updated_at}]}`.
+  - `payments_due`: `{count, amount, due_before, items[{invoice_id, invoice_number, vendor_name, total_amount, due_date, overdue, payment_status}]}`. Covers approved invoices due within 7 days, including overdue ones.
+
+Each section lists at most 5 items.

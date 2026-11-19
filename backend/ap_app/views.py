@@ -13,11 +13,12 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework.exceptions import ValidationError as APIValidationError
 from rest_framework.filters import SearchFilter
 from .models import *
 from .serializers import *
 from .permissions import APRolePermission
-from .services import DuplicateInvoiceError, aging_bucket_filters, audit, capture_invoice_upload, extract_ocr, extract_invoice_fields, validate_and_match, create_approval_steps, notify_current_approval_step, process_approval_deadlines
+from .services import AGING_BUCKET_LABELS, DuplicateInvoiceError, aging_bucket_filters, outstanding_invoices, audit, capture_invoice_upload, extract_ocr, extract_invoice_fields, validate_and_match, create_approval_steps, notify_current_approval_step, process_approval_deadlines
 import csv
 import hashlib
 import json
@@ -390,6 +391,53 @@ class GRNViewSet(BaseViewSet):
         obj = serializer.save(received_by=self.request.user)
         audit(self.request.user, "goodsreceipt.created", obj)
 
+TRUE_VALUES = {"1", "true", "yes"}
+
+
+def filter_invoice_list(queryset, params, today):
+    """Optional list filters (all additive; absent params change nothing).
+
+    status=A,B          one or more invoice statuses
+    outstanding=1       unpaid invoices with a due date (the aging population)
+    aging=<bucket>      one dashboard aging bucket ("Not yet due", "0-30", "31-60", "61-90", "90+"); implies outstanding
+    due_before=YYYY-MM-DD   due on or before this date
+    needs_review=1      OCR-captured invoices whose extraction no one has reviewed yet
+    """
+    errors = {}
+    statuses = [value.strip() for value in params.get("status", "").split(",") if value.strip()]
+    if statuses:
+        valid = {value for value, _label in Invoice.Status.choices}
+        unknown = sorted(set(statuses) - valid)
+        if unknown:
+            errors["status"] = [f"Unknown invoice status: {', '.join(unknown)}."]
+        else:
+            queryset = queryset.filter(status__in=statuses)
+
+    bucket = params.get("aging", "").strip()
+    if bucket:
+        filters = dict(aging_bucket_filters(today)).get(bucket)
+        if filters is None:
+            errors["aging"] = [f"Choose one of: {', '.join(AGING_BUCKET_LABELS)}."]
+        else:
+            queryset = outstanding_invoices(queryset).filter(**filters)
+    elif params.get("outstanding", "").lower() in TRUE_VALUES:
+        queryset = outstanding_invoices(queryset)
+
+    due_before = params.get("due_before", "").strip()
+    if due_before:
+        try:
+            queryset = queryset.filter(due_date__isnull=False, due_date__lte=date.fromisoformat(due_before))
+        except ValueError:
+            errors["due_before"] = ["Use the YYYY-MM-DD date format."]
+
+    if params.get("needs_review", "").lower() in TRUE_VALUES:
+        queryset = queryset.exclude(ocr_text="").filter(extraction_reviewed_at__isnull=True)
+
+    if errors:
+        raise APIValidationError(errors)
+    return queryset
+
+
 class InvoiceViewSet(BaseViewSet):
     queryset = Invoice.objects.select_related("vendor", "purchase_order", "created_by").prefetch_related("lines").all().order_by("-created_at")
     serializer_class = InvoiceSerializer
@@ -403,6 +451,8 @@ class InvoiceViewSet(BaseViewSet):
             queryset = queryset.filter(approvals__approver=self.request.user).distinct()
         elif role == User.Roles.ACCOUNTANT:
             queryset = queryset.filter(status__in=[Invoice.Status.APPROVED, Invoice.Status.PAID])
+        if self.action == "list":
+            queryset = filter_invoice_list(queryset, self.request.query_params, timezone.localdate())
         return queryset
 
     @action(detail=False, methods=["post"], url_path="ocr-preview")
@@ -929,11 +979,97 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AuditLogSerializer
     permission_classes = [APRolePermission]
 
+ATTENTION_ITEMS = 5
+
+
+def _first_exception(invoice):
+    first = (invoice.exceptions or [None])[0]
+    if isinstance(first, dict):
+        first = first.get("message") or first.get("detail") or next(iter(first.values()), "")
+    return str(first or "")
+
+
+def dashboard_attention(user, today):
+    """Per-user work queue for the dashboard, limited to what the user's role can act on or read."""
+    role = user.role
+    attention = {}
+    if role in (User.Roles.ADMIN, User.Roles.APPROVER):
+        approvals = Approval.objects.select_related("invoice", "invoice__vendor").filter(
+            approver=user,
+            status__in=[Approval.Status.PENDING, Approval.Status.ESCALATED],
+            due_at__isnull=False,
+            invoice__status=Invoice.Status.PENDING_APPROVAL,
+        ).order_by("due_at")
+        now = timezone.now()
+        attention["my_approvals"] = {
+            "count": approvals.count(),
+            "items": [
+                {
+                    "approval_id": approval.pk,
+                    "invoice_id": approval.invoice_id,
+                    "invoice_number": approval.invoice.invoice_number,
+                    "vendor_name": approval.invoice.vendor.name,
+                    "total_amount": approval.invoice.total_amount,
+                    "status": approval.status,
+                    "due_at": approval.due_at,
+                    "overdue": approval.due_at < now,
+                }
+                for approval in approvals[:ATTENTION_ITEMS]
+            ],
+        }
+    if role in (User.Roles.ADMIN, User.Roles.AP_CLERK, User.Roles.AUDITOR):
+        exceptions = Invoice.objects.select_related("vendor").filter(
+            status=Invoice.Status.EXCEPTION,
+        ).order_by("-updated_at")
+        attention["exceptions"] = {
+            "count": exceptions.count(),
+            "items": [
+                {
+                    "invoice_id": invoice.pk,
+                    "invoice_number": invoice.invoice_number,
+                    "vendor_name": invoice.vendor.name,
+                    "total_amount": invoice.total_amount,
+                    "exception": _first_exception(invoice),
+                    "updated_at": invoice.updated_at,
+                }
+                for invoice in exceptions[:ATTENTION_ITEMS]
+            ],
+        }
+    if role in (User.Roles.ADMIN, User.Roles.ACCOUNTANT, User.Roles.AUDITOR):
+        week_end = today + timedelta(days=7)
+        due = Invoice.objects.select_related("vendor", "payment").filter(
+            status=Invoice.Status.APPROVED, due_date__isnull=False, due_date__lte=week_end,
+        ).order_by("due_date")
+        totals = due.aggregate(amount=Sum("total_amount"), count=Count("id"))
+        attention["payments_due"] = {
+            "count": totals["count"],
+            "amount": totals["amount"] or 0,
+            "due_before": week_end,
+            "items": [
+                {
+                    "invoice_id": invoice.pk,
+                    "invoice_number": invoice.invoice_number,
+                    "vendor_name": invoice.vendor.name,
+                    "total_amount": invoice.total_amount,
+                    "due_date": invoice.due_date,
+                    "overdue": invoice.due_date < today,
+                    "payment_status": getattr(getattr(invoice, "payment", None), "status", None),
+                }
+                for invoice in due[:ATTENTION_ITEMS]
+            ],
+        }
+    return attention
+
+
 @api_view(["GET"])
 def dashboard(request):
     now = timezone.localdate()
     invoices = Invoice.objects.all()
-    outstanding = invoices.filter(status__in=[Invoice.Status.PENDING_APPROVAL, Invoice.Status.APPROVED, Invoice.Status.MATCHED]).exclude(due_date__isnull=True)
+    outstanding = outstanding_invoices(invoices)
+    outstanding_totals = outstanding.aggregate(amount=Sum("total_amount"), count=Count("id"))
+    # OCR engine (Tesseract) word confidence averaged over OCR-captured invoices. A confidence, not accuracy.
+    ocr_invoices = invoices.exclude(ocr_text="")
+    ocr_confidence = ocr_invoices.aggregate(average=Avg("ocr_accuracy"), count=Count("id"))
     buckets = [(label, outstanding.filter(**filters)) for label, filters in aging_bucket_filters(now)]
     turnaround_values = [
         (i.approval_completed_at-i.created_at).total_seconds()/3600
@@ -963,6 +1099,13 @@ def dashboard(request):
         "vendor_analytics": vendor_analytics,
         "payment_status": list(Payment.objects.values("status").annotate(count=Count("id"), amount=Sum("amount"))),
         "exceptions_count": invoices.filter(status=Invoice.Status.EXCEPTION).count(),
+        # Additive fields for the redesigned dashboard.
+        "outstanding_amount": outstanding_totals["amount"] or 0,
+        "outstanding_count": outstanding_totals["count"],
+        "average_ocr_confidence": round(float(ocr_confidence["average"]), 1) if ocr_confidence["count"] else None,
+        "ocr_confidence_invoice_count": ocr_confidence["count"],
+        "ocr_review_pending_count": ocr_invoices.filter(extraction_reviewed_at__isnull=True).count(),
+        "attention": dashboard_attention(request.user, now),
     })
 
 

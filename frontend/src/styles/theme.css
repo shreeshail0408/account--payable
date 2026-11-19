@@ -87,6 +87,23 @@
   --chart-4: oklch(0.588 0.158 241.966);
   --chart-5: oklch(0.704 0.04 256.788);
 
+  /*
+   * Dashboard data palettes, checked with the dataviz validator against the card surface.
+   * stage-1..6: invoice lifecycle groups (categorical, fixed order = adjacency order).
+   * aging-0: "Not yet due" (neutral); aging-1..4: overdue buckets, warning -> danger.
+   */
+  --stage-1: #2a78d6;
+  --stage-2: #eb6834;
+  --stage-3: #1baf7a;
+  --stage-4: #eda100;
+  --stage-5: #e87ba4;
+  --stage-6: #008300;
+  --aging-0: #94a3b8;
+  --aging-1: #dd9a10;
+  --aging-2: #e0733a;
+  --aging-3: #cc4a38;
+  --aging-4: #9e2828;
+
   /* Elevation: borders do most of the work; shadows stay faint */
   --shadow-card: 0 1px 2px 0 oklch(0.208 0.042 265.755 / 0.04);
   --shadow-popover: 0 8px 24px -6px oklch(0.208 0.042 265.755 / 0.14), 0 2px 6px -2px oklch(0.208 0.042 265.755 / 0.08);
@@ -155,6 +172,18 @@
   --chart-3: oklch(0.828 0.189 84.429);
   --chart-4: oklch(0.685 0.169 237.323);
   --chart-5: oklch(0.554 0.046 257.417);
+
+  --stage-1: #3987e5;
+  --stage-2: #d95926;
+  --stage-3: #199e70;
+  --stage-4: #c98500;
+  --stage-5: #d55181;
+  --stage-6: #0ca30c;
+  --aging-0: #64748b;
+  --aging-1: #f2b84a;
+  --aging-2: #ea8a52;
+  --aging-3: #df5f4c;
+  --aging-4: #c83e3e;
 
   --shadow-card: 0 1px 2px 0 oklch(0 0 0 / 0.3);
   --shadow-popover: 0 8px 24px -6px oklch(0 0 0 / 0.5), 0 2px 6px -2px oklch(0 0 0 / 0.4);

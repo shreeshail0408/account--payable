@@ -24,3 +24,46 @@ main[data-shell-main] {
     padding: 18px 12px;
   }
 }
+
+/* Active list filters (Invoices page), linked from the dashboard. */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.filter-chips-label {
+  color: #858da1;
+  font-size: 12px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  border: 1px solid #c9cbf3;
+  border-radius: 999px;
+  background: #eeeefe;
+  color: #3f3fae;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.filter-chip:hover {
+  background: #e2e2fc;
+}
+
+.filter-chip:focus-visible {
+  outline: 2px solid #5b5bd6;
+  outline-offset: 2px;
+}
+
+.filter-chip svg {
+  width: 14px;
+  height: 14px;
+}
