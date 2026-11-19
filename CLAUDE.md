@@ -68,13 +68,14 @@ frontend/src/
   auth.jsx             AuthProvider, useAuth {user, signIn, logout}, ROLE_LABELS
   layout/              nav.js (NAV_ITEMS/NAV_GROUPS/MOBILE_TABS, roles per page: the single source for nav
                        + route guards), AppShell, Sidebar (collapsible, `[` key), Topbar (breadcrumb),
-                       CommandPalette (Ctrl/⌘K; ?search= on invoices/vendors/POs), NotificationsMenu,
+                       CommandPalette (Ctrl/⌘K, downloaded on first open; ?search= on invoices/vendors/POs), NotificationsMenu,
                        UserMenu (theme), MobileTabBar, RouteErrorBoundary, PageFallback, LegacyPage,
                        useShellData (polled pending-approvals + unread counts)
   hooks/               useDebouncedValue, useLocalStorageState, useMediaQuery, useUrlIntent (?search=, ?new=1)
   services/api.js      axios instance, bearer token, 401 -> refresh -> retry, else logout
   styles/theme.css     design tokens (light + dark CSS variables), Tailwind theme mapping, scoped base
   lib/utils.js         cn() class merge
+  lib/api-errors.js    apiErrorMessage(error, {fallback, forbidden}): network/403/5xx/DRF field errors -> text
   lib/format.js        formatCurrency (INR, en-IN), formatCurrencyCompact, formatNumber, formatPercent,
                        formatDate, formatDateTime, daysFromToday
   components/ui/       Button, Input, Textarea, Label, Select, Badge, Card, Dialog, Sheet, DropdownMenu,

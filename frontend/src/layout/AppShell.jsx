@@ -1,10 +1,10 @@
-import React, { Suspense, useEffect, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
+import { toast } from "@/components/ui/toast";
 import { useAuth } from "@/auth";
 import { useLocalStorageState } from "@/hooks/useLocalStorageState";
 import { cn } from "@/lib/utils";
-import { CommandPalette } from "./CommandPalette";
 import { MobileTabBar } from "./MobileTabBar";
 import { PageFallback } from "./PageFallback";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
@@ -12,6 +12,52 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import { findRoute } from "./nav";
 import { useNotifications, usePendingApprovals } from "./useShellData";
+
+/*
+ * The palette (cmdk + record search) is downloaded on first use, not with the shell.
+ * A plain dynamic import instead of React.lazy: a failed download can be retried on the
+ * next attempt (React.lazy caches the rejection) and never reaches an error boundary.
+ */
+let palettePromise = null;
+function loadCommandPalette() {
+  if (!palettePromise) {
+    palettePromise = import("./CommandPalette")
+      .then((module) => module.CommandPalette)
+      .catch((error) => {
+        palettePromise = null;
+        throw error;
+      });
+  }
+  return palettePromise;
+}
+
+/** Open/close state for the lazily loaded palette. */
+function useCommandPalette() {
+  const [Palette, setPalette] = useState(null);
+  const [open, setOpen] = useState(false);
+  const openRef = useRef(false);
+  openRef.current = open;
+
+  const show = useCallback(async () => {
+    try {
+      const component = await loadCommandPalette();
+      setPalette(() => component);
+      setOpen(true);
+    } catch {
+      toast.error("Search couldn't be loaded. Check your connection and try again.");
+    }
+  }, []);
+
+  const toggle = useCallback(() => {
+    if (openRef.current) {
+      setOpen(false);
+    } else {
+      show();
+    }
+  }, [show]);
+
+  return { Palette, open, setOpen, show, toggle };
+}
 
 function isTypingTarget(target) {
   return target instanceof HTMLElement
@@ -24,7 +70,8 @@ export function AppShell() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useLocalStorageState("ap-sidebar-collapsed", false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  const palette = useCommandPalette();
+  const { toggle: togglePalette } = palette;
 
   const { group, item } = findRoute(location.pathname);
   const pendingApprovals = usePendingApprovals(user, location.pathname);
@@ -43,7 +90,7 @@ export function AppShell() {
     const onKeyDown = (event) => {
       if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
-        setPaletteOpen((open) => !open);
+        togglePalette();
         return;
       }
       if (event.key === "[" && !event.metaKey && !event.ctrlKey && !event.altKey && !isTypingTarget(event.target)) {
@@ -52,7 +99,7 @@ export function AppShell() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [setCollapsed]);
+  }, [setCollapsed, togglePalette]);
 
   return (
     <div data-ui="" className="min-h-dvh bg-background text-foreground">
@@ -96,7 +143,7 @@ export function AppShell() {
           role={user?.role}
           notifications={notifications}
           onOpenMobileNav={() => setMobileNavOpen(true)}
-          onOpenSearch={() => setPaletteOpen(true)}
+          onOpenSearch={palette.show}
         />
         <main id="main-content" data-shell-main="" tabIndex={-1} className="pb-[calc(4rem+env(safe-area-inset-bottom))] outline-none md:pb-0">
           <RouteErrorBoundary resetKey={location.pathname}>
@@ -108,7 +155,9 @@ export function AppShell() {
       </div>
 
       <MobileTabBar role={user?.role} badges={badges} />
-      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} role={user?.role} />
+      {palette.Palette && (
+        <palette.Palette open={palette.open} onOpenChange={palette.setOpen} role={user?.role} />
+      )}
     </div>
   );
 }

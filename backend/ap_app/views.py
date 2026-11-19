@@ -637,8 +637,11 @@ class ApprovalRuleViewSet(BaseViewSet):
         return Response([{"id": user.pk, "username": user.username} for user in users])
 
 class ApprovalViewSet(viewsets.ReadOnlyModelViewSet):
+    """Role gate first (APRolePermission: read ADMIN/APPROVER/AUDITOR, decide APPROVER/ADMIN),
+    then the per-object checks below: queryset scoping, assigned approver, admin-only escalation."""
     queryset = Approval.objects.select_related("invoice", "approver", "rule").all().order_by("sequence")
     serializer_class = ApprovalSerializer
+    permission_classes = [APRolePermission]
     filter_backends = [SearchFilter]
     search_fields = ["invoice__invoice_number", "status", "approver__username"]
 
