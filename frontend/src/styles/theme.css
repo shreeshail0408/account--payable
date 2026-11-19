@@ -11,6 +11,10 @@
  * imports below with `@import "tailwindcss";` and drop the scoped reset.
  */
 
+/* Layer order must be declared first: layers rank by first mention, and the scoped
+   reset in `base` has to lose to `utilities`. */
+@layer theme, base, components, utilities;
+
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 

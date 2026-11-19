@@ -207,7 +207,7 @@ export default function Styleguide() {
   return (
     <div
       data-ui=""
-      className="-m-7 min-h-[calc(100vh-4rem)] bg-background text-foreground max-[760px]:-mx-3 max-[760px]:-my-4.5"
+      className="-m-7 min-h-[calc(100vh-68px)] bg-background text-foreground max-[760px]:-mx-3 max-[760px]:-my-4.5"
     >
       <StyleguideHeader />
 
@@ -232,7 +232,7 @@ export default function Styleguide() {
 
 function StyleguideHeader() {
   return (
-    <header className="sticky top-0 z-10 border-b border-border bg-background/85 backdrop-blur">
+    <header className="sticky top-[68px] z-[5] border-b border-border bg-background/85 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4 lg:px-8">
         <div className="flex flex-col gap-0.5">
           <h1 className="text-xl font-semibold tracking-tight">Design system</h1>
@@ -280,7 +280,7 @@ function ThemeSwitcher() {
 
 function Section({ id, title, description, children }) {
   return (
-    <section id={id} className="flex scroll-mt-32 flex-col gap-6">
+    <section id={id} className="flex scroll-mt-48 flex-col gap-6">
       <div className="flex flex-col gap-1 border-b border-border pb-4">
         <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
         {description && <p className="text-sm text-muted-foreground">{description}</p>}

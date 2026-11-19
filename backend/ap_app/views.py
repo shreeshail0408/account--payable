@@ -930,9 +930,6 @@ def dashboard(request):
         # Not Tesseract word confidence (that is reported per invoice, never as accuracy).
         "verified_extraction_accuracy": verified_accuracy,
         "verified_extraction_field_count": verification_counts["total"],
-        # Deprecated aliases kept for existing API clients; use the verified_extraction_* keys.
-        "ocr_accuracy": verified_accuracy,
-        "ocr_verified_field_count": verification_counts["total"],
         "vendor_analytics": vendor_analytics,
         "payment_status": list(Payment.objects.values("status").annotate(count=Count("id"), amount=Sum("amount"))),
         "exceptions_count": invoices.filter(status=Invoice.Status.EXCEPTION).count(),

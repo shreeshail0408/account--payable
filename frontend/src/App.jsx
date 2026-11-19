@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, Suspense, useContext, useState } from "react";
 import { Routes, Route, Navigate, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard, ReceiptText, Building2, ClipboardCheck, CreditCard,
-  ShoppingCart, FileBarChart, LogOut, Menu, X, Search, Bell, UserCircle, PackageCheck, Users
+  ShoppingCart, FileBarChart, LogOut, Menu, X, Search, Bell, UserCircle, PackageCheck, Users, Palette
 } from "lucide-react";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -15,6 +15,10 @@ import Payments from "./pages/Payments";
 import Reports from "./pages/Reports";
 import Employees from "./pages/Employees";
 import api from "./services/api";
+import { Loader } from "./components/UI";
+
+// Admin-only design review page; loaded on demand so it stays out of the main bundle.
+const Styleguide = React.lazy(() => import("./pages/Styleguide"));
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -61,6 +65,7 @@ function Shell({ children }) {
     ["/payments", "Payments", CreditCard, ["ADMIN","ACCOUNTANT","AUDITOR"]],
     ["/reports", "Reports", FileBarChart, ["ADMIN","ACCOUNTANT","AUDITOR"]],
     ["/employees", "Employees", Users, ["ADMIN"]],
+    ["/styleguide", "Styleguide", Palette, ["ADMIN"]],
   ];
   return (
     <div className="app-shell">
@@ -123,6 +128,16 @@ export default function App() {
         <Route path="/payments" element={<Protected><Payments /></Protected>} />
         <Route path="/reports" element={<Protected><Reports /></Protected>} />
         <Route path="/employees" element={<Protected roles={["ADMIN"]}><Employees /></Protected>} />
+        <Route
+          path="/styleguide"
+          element={(
+            <Protected roles={["ADMIN"]}>
+              <Suspense fallback={<Loader />}>
+                <Styleguide />
+              </Suspense>
+            </Protected>
+          )}
+        />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>
     </AuthContext.Provider>

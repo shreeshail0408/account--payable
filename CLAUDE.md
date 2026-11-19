@@ -5,7 +5,7 @@ Accounts Payable automation ("PayFlow AP"): invoice capture + OCR, validation, P
 ## Stack
 
 - **Backend:** Python 3, Django 4.2, Django REST Framework, SimpleJWT (rotating refresh tokens), drf-spectacular (Swagger), django-cors-headers, PostgreSQL (psycopg2), Tesseract via pytesseract + pdf2image + Pillow.
-- **Frontend:** React 18, Vite 6, react-router-dom 6, axios, recharts, lucide-react. Plain CSS (no Tailwind/CSS-in-JS). No TypeScript, no frontend test runner or linter configured.
+- **Frontend:** React 18, Vite 6 (JS, no TypeScript), react-router-dom 6, axios, recharts, lucide-react. Styling: Tailwind CSS v4 (`@tailwindcss/vite`) + shadcn/ui-style components on Radix primitives, sonner (toasts), cmdk (command menu). Legacy plain CSS still styles un-migrated pages. No frontend test runner or linter configured.
 - **Optional integrations** (off unless configured in `backend/.env`): local Ollama-compatible LLM, IMAP intake, SMTP, ERP, bank, GST verification.
 
 ## Running
@@ -59,14 +59,27 @@ backend/
     integrations.py    ERP / bank / GST / SMTP connectors
     management/commands/
     tests.py
+frontend/
+  vite.config.js       react + tailwind plugins, `@` -> src alias (jsconfig.json mirrors it)
 frontend/src/
-  main.jsx             Router + CSS imports
+  main.jsx             ThemeProvider, TooltipProvider, Router, Toaster, CSS imports
   App.jsx              AuthContext (useAuth), Shell (sidebar, notifications, topbar), Protected routes
   services/api.js      axios instance, bearer token, 401 -> refresh -> retry, else logout
-  components/UI.jsx    PageHeader, Modal, Status, Loader, Empty
+  styles/theme.css     design tokens (light + dark CSS variables), Tailwind theme mapping, scoped base
+  lib/utils.js         cn() class merge
+  lib/format.js        formatCurrency (INR, en-IN), formatCurrencyCompact, formatNumber, formatPercent,
+                       formatDate, formatDateTime, daysFromToday
+  components/ui/       Button, Input, Textarea, Label, Select, Badge, Card, Dialog, Sheet, DropdownMenu,
+                       Tabs, Tooltip, Skeleton, Table, Toast (sonner), Command (cmdk)
+  components/status-badge.jsx  StatusBadge: every backend status -> label, color, icon (pass `kind`)
+  components/states.jsx        LoadingState, EmptyState, ErrorState
+  components/amount.jsx        <Amount value/> (formatted INR, tabular numbers)
+  components/theme-provider.jsx  light/dark/system, `dark` class on <html>, default light
+  components/UI.jsx    LEGACY: PageHeader, Modal, Status, Loader, Empty
   pages/               Login, Dashboard, Invoices, Vendors, PurchaseOrders, GoodsReceipts,
-                       Approvals, Payments, Reports, Employees
-  styles.css, line-items.css, notifications.css
+                       Approvals, Payments, Reports, Employees (all legacy CSS for now),
+                       Styleguide (ADMIN-only /styleguide, renders every new component)
+  styles.css, line-items.css, notifications.css   LEGACY, delete after every page is migrated
 docs/                  api.md, database-schema.md, challenges-and-solutions.md, demo-video-script.md, assets/
 ```
 
@@ -91,7 +104,7 @@ All under `/api/`, bearer JWT. List endpoints are paginated (`{count, next, prev
 | Auth | `POST auth/login/` (returns `access`, `refresh`, `user`), `POST auth/refresh/` |
 | Employees | `GET/POST employees/`, `PATCH employees/{id}/activation/` `{is_active}` |
 | Notifications | `GET notifications/`, `POST notifications/{id}/mark_read/` |
-| Dashboard | `GET dashboard/` → `aging`, `invoice_status`, `payment_status`, `vendor_analytics`, `pending_approvals`, `verified_extraction_accuracy`, `verified_extraction_field_count` (deprecated aliases `ocr_accuracy`, `ocr_verified_field_count`), `processing_turnaround_hours`, `exceptions_count` |
+| Dashboard | `GET dashboard/` → `aging`, `invoice_status`, `payment_status`, `vendor_analytics`, `pending_approvals`, `verified_extraction_accuracy`, `verified_extraction_field_count`, `processing_turnaround_hours`, `exceptions_count` |
 | Vendors | `GET/POST vendors/`, `GET/POST vendors/{id}/bank-details/`, `GET vendors/{id}/full-bank-details/` (ADMIN/ACCOUNTANT, audited; not yet used by UI), `POST vendors/{id}/approve_onboarding/`, `POST vendors/{id}/reject_onboarding/` `{comments}`, `POST vendors/{id}/set-status/` `{status}`, `POST vendors/{id}/verify-gstin/` |
 | Purchase orders | `GET/POST purchase-orders/` (optional nested `lines`) |
 | Goods receipts | `GET/POST grns/` (`lines: [{po_line, quantity}]`) |
@@ -106,9 +119,20 @@ Full list: `docs/api.md` and Swagger at `/api/docs/`.
 
 1. **Readable multi-line JSX.** One element/prop group per line when it doesn't fit comfortably; no one-line components, no chains of `&&`/ternaries crammed into a single line. Extract sub-components and handlers instead of inlining large arrow functions. Existing pages are dense one-liners; reformat the parts you touch.
 2. **No minified source CSS.** Source stylesheets are formatted one declaration per line. `styles.css` is currently minified; when editing it, expand the touched rules (or the whole file in a dedicated formatting change). Only `dist/` may contain minified output.
-3. **Every page handles loading, error and empty states.** Show `<Loader/>` while fetching, a visible `alert error` when a request fails (never let a failed load look like an empty list), and `<Empty/>` with a helpful message when there is no data. This applies to secondary fetches (dropdown sources, integration status) too.
+3. **Every page handles loading, error and empty states.** Show `<LoadingState/>` (legacy: `<Loader/>`) while fetching, a visible `alert error` when a request fails (never let a failed load look like an empty list), and `<Empty/>` with a helpful message when there is no data. This applies to secondary fetches (dropdown sources, integration status) too.
 4. **Never break existing API contracts.** Don't rename/remove endpoints, fields, query params, payload shapes, status values or role names. Backend changes must be additive and backward compatible; frontend changes must work with the current API. If a contract change is unavoidable, stop and ask.
 5. Role checks: server-side permission is the source of truth; any UI gating must match `permissions.py`.
 6. Surface API errors via DRF `detail` or flattened field errors (see `formatApiError` in `Invoices.jsx`); don't swallow them.
 7. Don't present demo/local actions (e.g. "Record demo payment") or unconfigured integrations as real money movement or live verification.
 8. Don't commit secrets; `backend/.env` is local only.
+
+## Frontend design system
+
+- New and migrated UI uses `src/components/ui` + Tailwind utilities and the tokens in `src/styles/theme.css`. Never hard-code hex/rgb colors; use token classes (`bg-card`, `text-muted-foreground`, `border-border`, `bg-primary`, `text-danger`, `bg-success-subtle`, …). Every token has light and dark values.
+- **Coexistence:** Tailwind preflight is not loaded globally. The reset only applies inside `data-ui` elements, so a migrated page's root must have `data-ui=""`. Portal components already set it. Legacy CSS is unlayered and beats Tailwind layers, so don't reuse legacy class names (`status`, `panel`, `modal`, `primary`, …) in new markup. Once all pages are migrated, delete the three legacy stylesheets and `components/UI.jsx`, switch `theme.css` to `@import "tailwindcss";`, remove the scoped reset and change the ThemeProvider default to `"system"`.
+- Money: always `formatCurrency`/`<Amount>`; numeric table columns use `<TableHead numeric>`/`<TableCell numeric>` (right-aligned, tabular-nums). Dates: `formatDate`/`formatDateTime`.
+- Statuses: always `<StatusBadge kind="invoice|payment|vendor|onboarding|approval|purchaseOrder|verification|delivery|inboundEmail|employee" status={value}/>`; add new backend statuses to `STATUS_MAP`.
+- Spacing on an 8px grid (Tailwind steps 2/4/6/8/12…); 4px half-steps only inside controls. Cards are `rounded-lg` with a border, not heavy shadows.
+- Feedback: `toast` from `@/components/ui/toast` after actions; `LoadingState`/`ErrorState`/`EmptyState` for data views; `Dialog` for short confirmations, `Sheet` for record details and long forms. No `window.prompt`/`confirm`.
+- Radix `SelectItem` can't have `value=""`; use a sentinel like `"all"` and map it before calling the API.
+- Review visual changes on `/styleguide` (ADMIN) in light and dark.

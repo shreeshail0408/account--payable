@@ -119,7 +119,12 @@ export function StatusBadge({ status: value, kind, className, showIcon = true })
   const Icon = meta.icon;
   return (
     <Badge variant={meta.variant} className={className}>
-      {showIcon && <Icon aria-hidden="true" className={cn(Icon === LoaderCircle && "animate-spin [animation-duration:2.5s]")} />}
+      {showIcon && (
+        <Icon
+          aria-hidden="true"
+          className={cn(Icon === LoaderCircle && "animate-spin [animation-duration:2.5s]")}
+        />
+      )}
       {meta.label}
     </Badge>
   );

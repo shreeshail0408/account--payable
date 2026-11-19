@@ -145,15 +145,14 @@ class DashboardAgingTests(APITestCase):
 
 
 class DashboardFieldNamingTests(APITestCase):
-    def test_extraction_accuracy_uses_new_key_and_keeps_deprecated_alias(self):
+    def test_extraction_accuracy_key_is_not_named_after_ocr(self):
         admin = User.objects.create_user("naming-admin", password="StrongPass123!", role="ADMIN")
         self.client.force_authenticate(admin)
         data = self.client.get("/api/dashboard/").data
         self.assertIn("verified_extraction_accuracy", data)
         self.assertIn("verified_extraction_field_count", data)
-        self.assertEqual(data["verified_extraction_accuracy"], data["ocr_accuracy"])
-        self.assertEqual(data["verified_extraction_field_count"], data["ocr_verified_field_count"])
-        self.assertFalse(any("confidence" in key for key in data))
+        self.assertNotIn("ocr_accuracy", data)
+        self.assertNotIn("ocr_verified_field_count", data)
 
 
 class TwoWayLineMatchingTests(TestCase):
