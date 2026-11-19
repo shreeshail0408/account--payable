@@ -39,11 +39,14 @@ Approval-rule changes are administrator-only. Approvers cannot edit approval sta
 - `/api/approval-rules/`
 - `/api/approvals/`
 - `/api/approvals/reminders/`
+- `/api/approvals/pending-count/` (GET → `{count}`: the caller's own PENDING/ESCALATED approvals on invoices awaiting approval; used for the sidebar badge)
 - `/api/approvals/{id}/approve/`
 - `/api/approvals/{id}/reject/`
 - `/api/approvals/escalate-overdue/` (administrator only)
 - `/api/notifications/`
 - `/api/notifications/{id}/mark_read/` (recipient only)
+- `/api/notifications/unread-count/` (GET → `{count}` of the caller's unread notifications)
+- `/api/notifications/mark-all-read/` (POST → `{marked}`; marks all of the caller's unread notifications read)
 - `/api/vendor-onboardings/`
 - `/api/vendors/{id}/approve_onboarding/` (administrator only)
 - `/api/vendors/{id}/reject_onboarding/` (administrator only)

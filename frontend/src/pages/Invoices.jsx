@@ -3,6 +3,7 @@ import api from "../services/api";
 import {PageHeader,Modal,Status,Loader,Empty} from "../components/UI";
 import {Plus,Search,Upload} from "lucide-react";
 import {useAuth} from "../App";
+import {useUrlIntent} from "../hooks/useUrlIntent";
 
 function formatApiError(data){
  if(typeof data==="string")return data;
@@ -14,8 +15,14 @@ function formatApiError(data){
 }
 
 export default function Invoices(){
- const [rows,setRows]=useState([]),[vendors,setVendors]=useState([]),[purchaseOrders,setPurchaseOrders]=useState([]),[loading,setLoading]=useState(true),[open,setOpen]=useState(false),[q,setQ]=useState(""),[ocrInvoice,setOcrInvoice]=useState(null),[reviewFields,setReviewFields]=useState(null),[reviewLines,setReviewLines]=useState([]),[confirmReview,setConfirmReview]=useState(false),[erpConfigured,setErpConfigured]=useState(false),[actionError,setActionError]=useState("");
+ const [rows,setRows]=useState([]),[vendors,setVendors]=useState([]),[purchaseOrders,setPurchaseOrders]=useState([]),[loading,setLoading]=useState(true),[open,setOpen]=useState(false),[q,setQ]=useState(()=>new URLSearchParams(window.location.search).get("search")||""),[ocrInvoice,setOcrInvoice]=useState(null),[reviewFields,setReviewFields]=useState(null),[reviewLines,setReviewLines]=useState([]),[confirmReview,setConfirmReview]=useState(false),[erpConfigured,setErpConfigured]=useState(false),[actionError,setActionError]=useState("");
  const {user}=useAuth();
+ useUrlIntent({
+  onSearch: setQ,
+  onNew: () => {
+   if (["ADMIN","AP_CLERK"].includes(user?.role)) setOpen(true);
+  },
+ });
  const [form,setForm]=useState({invoice_number:"",vendor:"",purchase_order:"",invoice_date:"",due_date:"",extracted_gstin:"",subtotal:"",tax_amount:"0",total_amount:"",match_type:"NONE"});
  const [lineItems,setLineItems]=useState([]);
  const [file,setFile]=useState(null),[bulk,setBulk]=useState(null),[bulkVendor,setBulkVendor]=useState(""),[ocrPreview,setOcrPreview]=useState(null),[ocrLoading,setOcrLoading]=useState(false),[formError,setFormError]=useState(""),[reviewConfirmed,setReviewConfirmed]=useState(false);

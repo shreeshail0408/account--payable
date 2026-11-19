@@ -3,9 +3,11 @@ import api from "../services/api";
 import {PageHeader,Status,Loader,Empty,Modal} from "../components/UI";
 import {Plus,Search} from "lucide-react";
 import {useAuth} from "../App";
+import {useUrlIntent} from "../hooks/useUrlIntent";
 export default function PurchaseOrders(){
  const {user}=useAuth();const canManage=["ADMIN","AP_CLERK"].includes(user?.role);
- const [rows,setRows]=useState([]),[vendors,setVendors]=useState([]),[loading,setLoading]=useState(true),[q,setQ]=useState(""),[open,setOpen]=useState(false);
+ const [rows,setRows]=useState([]),[vendors,setVendors]=useState([]),[loading,setLoading]=useState(true),[q,setQ]=useState(()=>new URLSearchParams(window.location.search).get("search")||""),[open,setOpen]=useState(false);
+ useUrlIntent({onSearch: setQ});
  const [form,setForm]=useState({number:"",vendor:"",order_date:"",expected_date:"",total_amount:"",status:"OPEN",line_description:"",line_quantity:"",line_unit_price:""});
  const load=()=>api.get("/purchase-orders/",{params:{search:q}}).then(r=>setRows(r.data.results||r.data)).finally(()=>setLoading(false));
  useEffect(()=>{load();api.get("/vendors/").then(r=>setVendors(r.data.results||r.data))},[q]);

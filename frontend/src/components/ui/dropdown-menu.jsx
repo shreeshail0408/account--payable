@@ -1,11 +1,12 @@
 import React from "react";
 import * as MenuPrimitive from "@radix-ui/react-dropdown-menu";
-import { Check } from "lucide-react";
+import { Check, Circle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export const DropdownMenu = MenuPrimitive.Root;
 export const DropdownMenuTrigger = MenuPrimitive.Trigger;
 export const DropdownMenuGroup = MenuPrimitive.Group;
+export const DropdownMenuRadioGroup = MenuPrimitive.RadioGroup;
 
 const itemClasses = [
   "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none",
@@ -72,6 +73,26 @@ export const DropdownMenuCheckboxItem = React.forwardRef(function DropdownMenuCh
       </span>
       {children}
     </MenuPrimitive.CheckboxItem>
+  );
+});
+
+export const DropdownMenuRadioItem = React.forwardRef(function DropdownMenuRadioItem(
+  { className, children, ...props },
+  ref,
+) {
+  return (
+    <MenuPrimitive.RadioItem
+      ref={ref}
+      className={cn(itemClasses, "pl-8", className)}
+      {...props}
+    >
+      <span className="absolute left-2 flex size-4 items-center justify-center">
+        <MenuPrimitive.ItemIndicator>
+          <Circle className="size-2 fill-primary text-primary" />
+        </MenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </MenuPrimitive.RadioItem>
   );
 });
 

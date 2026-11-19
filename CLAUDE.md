@@ -63,7 +63,15 @@ frontend/
   vite.config.js       react + tailwind plugins, `@` -> src alias (jsconfig.json mirrors it)
 frontend/src/
   main.jsx             ThemeProvider, TooltipProvider, Router, Toaster, CSS imports
-  App.jsx              AuthContext (useAuth), Shell (sidebar, notifications, topbar), Protected routes
+  App.jsx              routes: React.lazy page per chunk, RequireAuth -> AppShell, RequireRole (nav.js roles),
+                       LegacyPage wrapper for un-migrated pages; re-exports useAuth for legacy imports
+  auth.jsx             AuthProvider, useAuth {user, signIn, logout}, ROLE_LABELS
+  layout/              nav.js (NAV_ITEMS/NAV_GROUPS/MOBILE_TABS, roles per page: the single source for nav
+                       + route guards), AppShell, Sidebar (collapsible, `[` key), Topbar (breadcrumb),
+                       CommandPalette (Ctrl/⌘K; ?search= on invoices/vendors/POs), NotificationsMenu,
+                       UserMenu (theme), MobileTabBar, RouteErrorBoundary, PageFallback, LegacyPage,
+                       useShellData (polled pending-approvals + unread counts)
+  hooks/               useDebouncedValue, useLocalStorageState, useMediaQuery, useUrlIntent (?search=, ?new=1)
   services/api.js      axios instance, bearer token, 401 -> refresh -> retry, else logout
   styles/theme.css     design tokens (light + dark CSS variables), Tailwind theme mapping, scoped base
   lib/utils.js         cn() class merge
@@ -76,10 +84,11 @@ frontend/src/
   components/amount.jsx        <Amount value/> (formatted INR, tabular numbers)
   components/theme-provider.jsx  light/dark/system, `dark` class on <html>, default light
   components/UI.jsx    LEGACY: PageHeader, Modal, Status, Loader, Empty
-  pages/               Login, Dashboard, Invoices, Vendors, PurchaseOrders, GoodsReceipts,
+  pages/               Login (migrated), Dashboard, Invoices, Vendors, PurchaseOrders, GoodsReceipts,
                        Approvals, Payments, Reports, Employees (all legacy CSS for now),
                        Styleguide (ADMIN-only /styleguide, renders every new component)
   styles.css, line-items.css, notifications.css   LEGACY, delete after every page is migrated
+  styles/legacy-bridge.css   shell <-> legacy overrides (.legacy-page light island); delete with the legacy CSS
 docs/                  api.md, database-schema.md, challenges-and-solutions.md, demo-video-script.md, assets/
 ```
 
@@ -103,13 +112,13 @@ All under `/api/`, bearer JWT. List endpoints are paginated (`{count, next, prev
 |---|---|
 | Auth | `POST auth/login/` (returns `access`, `refresh`, `user`), `POST auth/refresh/` |
 | Employees | `GET/POST employees/`, `PATCH employees/{id}/activation/` `{is_active}` |
-| Notifications | `GET notifications/`, `POST notifications/{id}/mark_read/` |
+| Notifications | `GET notifications/`, `GET notifications/unread-count/`, `POST notifications/{id}/mark_read/`, `POST notifications/mark-all-read/` |
 | Dashboard | `GET dashboard/` → `aging`, `invoice_status`, `payment_status`, `vendor_analytics`, `pending_approvals`, `verified_extraction_accuracy`, `verified_extraction_field_count`, `processing_turnaround_hours`, `exceptions_count` |
 | Vendors | `GET/POST vendors/`, `GET/POST vendors/{id}/bank-details/`, `GET vendors/{id}/full-bank-details/` (ADMIN/ACCOUNTANT, audited; not yet used by UI), `POST vendors/{id}/approve_onboarding/`, `POST vendors/{id}/reject_onboarding/` `{comments}`, `POST vendors/{id}/set-status/` `{status}`, `POST vendors/{id}/verify-gstin/` |
 | Purchase orders | `GET/POST purchase-orders/` (optional nested `lines`) |
 | Goods receipts | `GET/POST grns/` (`lines: [{po_line, quantity}]`) |
 | Invoices | `GET/POST invoices/` (multipart, `line_items` JSON string), `PATCH invoices/{id}/`, `POST invoices/ocr-preview/`, `POST invoices/bulk/` (`vendor`, `files[]`), `POST invoices/{id}/submit_approval/`, `POST invoices/{id}/review-extraction/` `{confirmed}`, `POST invoices/{id}/sync-erp/` |
-| Approvals | `GET approvals/`, `GET approvals/reminders/`, `POST approvals/{id}/approve/`, `POST approvals/{id}/reject/` `{comments}`, `POST approvals/escalate-overdue/`, `GET/POST/DELETE approval-rules/`, `GET approval-rules/approvers/` |
+| Approvals | `GET approvals/`, `GET approvals/pending-count/`, `GET approvals/reminders/`, `POST approvals/{id}/approve/`, `POST approvals/{id}/reject/` `{comments}`, `POST approvals/escalate-overdue/`, `GET/POST/DELETE approval-rules/`, `GET approval-rules/approvers/` |
 | Payments | `GET payments/` (includes `advice`, `status_events`), `POST payments/generate/` `{invoice, payment_method}`, `POST payments/{id}/mark_paid/` `{bank_reference}`, `POST payments/{id}/mark-failed/` `{reason}`, `POST payments/{id}/submit-bank/` |
 | Reports | `GET reports/?kind=aging|invoice-status|exceptions|gst|audit` (+ `search`, `date_from`, `date_to`, `vendor`, `status`; CSV blob), `GET integrations/status/`, `GET integration-deliveries/` |
 
@@ -129,7 +138,7 @@ Full list: `docs/api.md` and Swagger at `/api/docs/`.
 ## Frontend design system
 
 - New and migrated UI uses `src/components/ui` + Tailwind utilities and the tokens in `src/styles/theme.css`. Never hard-code hex/rgb colors; use token classes (`bg-card`, `text-muted-foreground`, `border-border`, `bg-primary`, `text-danger`, `bg-success-subtle`, …). Every token has light and dark values.
-- **Coexistence:** Tailwind preflight is not loaded globally. The reset only applies inside `data-ui` elements, so a migrated page's root must have `data-ui=""`. Portal components already set it. Legacy CSS is unlayered and beats Tailwind layers, so don't reuse legacy class names (`status`, `panel`, `modal`, `primary`, …) in new markup. Once all pages are migrated, delete the three legacy stylesheets and `components/UI.jsx`, switch `theme.css` to `@import "tailwindcss";`, remove the scoped reset and change the ThemeProvider default to `"system"`.
+- **Coexistence:** Tailwind preflight is not loaded globally. The reset only applies inside `data-ui` elements, so a migrated page's root must have `data-ui=""`. Portal components already set it. Legacy CSS is unlayered and beats Tailwind layers, so don't reuse legacy class names (`status`, `panel`, `modal`, `primary`, …) in new markup. Un-migrated pages render inside `<LegacyPage>` (light-only island, even in dark mode); a migrated page drops `legacy: true` in `App.jsx`. Once all pages are migrated, delete the three legacy stylesheets, `styles/legacy-bridge.css`, `layout/LegacyPage.jsx` and `components/UI.jsx`, switch `theme.css` to `@import "tailwindcss";`, remove the scoped reset and change the ThemeProvider default to `"system"`.
 - Money: always `formatCurrency`/`<Amount>`; numeric table columns use `<TableHead numeric>`/`<TableCell numeric>` (right-aligned, tabular-nums). Dates: `formatDate`/`formatDateTime`.
 - Statuses: always `<StatusBadge kind="invoice|payment|vendor|onboarding|approval|purchaseOrder|verification|delivery|inboundEmail|employee" status={value}/>`; add new backend statuses to `STATUS_MAP`.
 - Spacing on an 8px grid (Tailwind steps 2/4/6/8/12…); 4px half-steps only inside controls. Cards are `rounded-lg` with a border, not heavy shadows.

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   ArrowUpRight,
   Building2,
@@ -193,21 +193,10 @@ const KIND_LABELS = {
 export default function Styleguide() {
   const [commandOpen, setCommandOpen] = useState(false);
 
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey)) {
-        event.preventDefault();
-        setCommandOpen((open) => !open);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
   return (
     <div
       data-ui=""
-      className="-m-7 min-h-[calc(100vh-68px)] bg-background text-foreground max-[760px]:-mx-3 max-[760px]:-my-4.5"
+      className="min-h-[calc(100dvh-3.5rem)] bg-background text-foreground"
     >
       <StyleguideHeader />
 
@@ -232,7 +221,7 @@ export default function Styleguide() {
 
 function StyleguideHeader() {
   return (
-    <header className="sticky top-[68px] z-[5] border-b border-border bg-background/85 backdrop-blur">
+    <header className="sticky top-14 z-20 border-b border-border bg-background/85 backdrop-blur">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4 lg:px-8">
         <div className="flex flex-col gap-0.5">
           <h1 className="text-xl font-semibold tracking-tight">Design system</h1>
@@ -929,12 +918,11 @@ function FeedbackSection() {
 
 function CommandSection({ onOpenPalette }) {
   return (
-    <Section id="command" title="Command" description="cmdk. Inline for pickers; as a palette with Ctrl/⌘ + K.">
+    <Section id="command" title="Command" description="cmdk. Inline for pickers, or as a dialog. The app-wide palette (Ctrl/⌘ + K) lives in the shell.">
       <Specimen>
         <Button variant="outline" onClick={onOpenPalette}>
           <Search />
-          Open command palette
-          <kbd className="ml-2 rounded border border-border bg-muted px-1.5 font-mono text-[11px] text-muted-foreground">Ctrl K</kbd>
+          Open demo palette
         </Button>
       </Specimen>
       <Card className="max-w-md overflow-hidden">

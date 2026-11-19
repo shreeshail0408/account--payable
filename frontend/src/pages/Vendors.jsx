@@ -3,11 +3,18 @@ import api from "../services/api";
 import {PageHeader,Modal,Status,Loader,Empty} from "../components/UI";
 import {Plus,Search} from "lucide-react";
 import {useAuth} from "../App";
+import {useUrlIntent} from "../hooks/useUrlIntent";
 
 export default function Vendors(){
- const [rows,setRows]=useState([]),[loading,setLoading]=useState(true),[modal,setModal]=useState(false),[q,setQ]=useState(""),[bankVendor,setBankVendor]=useState(null),[bankForm,setBankForm]=useState({bank_name:"",bank_account:"",ifsc:""});
+ const [rows,setRows]=useState([]),[loading,setLoading]=useState(true),[modal,setModal]=useState(false),[q,setQ]=useState(()=>new URLSearchParams(window.location.search).get("search")||""),[bankVendor,setBankVendor]=useState(null),[bankForm,setBankForm]=useState({bank_name:"",bank_account:"",ifsc:""});
  const [error,setError]=useState("");
  const {user}=useAuth();
+ useUrlIntent({
+  onSearch: setQ,
+  onNew: () => {
+   if (["ADMIN","AP_CLERK"].includes(user?.role)) setModal(true);
+  },
+ });
  const [form,setForm]=useState({code:"",name:"",email:"",gstin:"",pan:"",status:"PENDING"});
  const load=()=>api.get("/vendors/",{params:{search:q}}).then(r=>setRows(r.data.results||r.data)).finally(()=>setLoading(false));
  useEffect(()=>{load()},[q]);

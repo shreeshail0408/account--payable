@@ -11,6 +11,8 @@ import "./styles/theme.css";
 import "./styles.css";
 import "./line-items.css";
 import "./notifications.css";
+// Must load after the legacy files: it overrides a few of their rules.
+import "./styles/legacy-bridge.css";
 
 ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>

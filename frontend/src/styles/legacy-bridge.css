@@ -1,0 +1,26 @@
+/*
+ * Bridge between the new app shell and the legacy stylesheets.
+ * Unlayered on purpose: it must beat the (also unlayered) legacy rules.
+ * Delete this file together with styles.css, line-items.css and notifications.css.
+ */
+
+/* Legacy styles.css pads every <main>; the new shell controls its own spacing. */
+main[data-shell-main] {
+  padding: 0;
+}
+
+/* Legacy pages: old padding, old light palette, regardless of the shell theme. */
+.legacy-page {
+  min-height: calc(100dvh - 3.5rem);
+  padding: 28px;
+  color: #1b2540;
+  background: #f5f7fb;
+  color-scheme: light;
+  font-family: "Inter Variable", Inter, "Segoe UI", Arial, sans-serif;
+}
+
+@media (max-width: 760px) {
+  .legacy-page {
+    padding: 18px 12px;
+  }
+}
