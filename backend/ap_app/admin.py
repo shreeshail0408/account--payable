@@ -1,0 +1,10 @@
+from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+from .models import *
+
+admin.site.register(User, UserAdmin)
+admin.site.register(Vendor)
+admin.site.register(PurchaseOrder)
+admin.site.register(Invoice)
+admin.site.register(GoodsReceipt)
+admin.site.register(Payment)

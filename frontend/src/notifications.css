@@ -1,0 +1,8 @@
+.notification-wrap{position:relative}
+.notification-menu{position:absolute;right:-60px;top:42px;width:min(360px,calc(100vw - 24px));max-height:430px;overflow:auto;background:#fff;border:1px solid #e8eaf1;border-radius:10px;box-shadow:0 12px 40px rgba(27,37,64,.18);z-index:60;padding:8px}
+.notification-title{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-bottom:1px solid #edf0f5;font-size:13px}
+.notification-item{width:100%;border:0;border-bottom:1px solid #f1f3f7;background:#f6f7ff;text-align:left;padding:11px 10px;display:flex;flex-direction:column;gap:5px;cursor:pointer;color:#1b2540}
+.notification-item.read{background:#fff;color:#6b7280}
+.notification-item span{font-size:12px;line-height:1.4}
+.notification-item small{font-size:10px;color:#969daf}
+.notification-empty{padding:24px;text-align:center;color:#858da1;font-size:12px}

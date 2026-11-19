@@ -1,0 +1,22 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!backend/.env.example
+!frontend/.env.example
+backend/.env
+frontend/.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Frontend/build artifacts
+node_modules/
+frontend/dist/
+
+# User uploads / local state
+backend/media/
+*.log

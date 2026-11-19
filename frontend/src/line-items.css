@@ -1,0 +1,13 @@
+.line-item-editor{border:1px solid #e8eaf1;border-radius:8px;padding:12px}
+.line-item-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.line-item-row{display:grid;grid-template-columns:1.2fr 1.4fr .7fr .9fr auto;align-items:end;gap:8px;padding:10px 0;border-top:1px solid #edf0f5}
+.line-item-row label{font-size:11px}
+.ocr-preview{padding:18px}
+.ocr-preview pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;background:#f7f8fb;padding:12px;border-radius:8px;font-size:12px}
+.ocr-suggestion{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f3f4ff;border-radius:8px;padding:12px}
+.ocr-suggestion div{display:flex;flex-direction:column;gap:5px}
+.ocr-suggestion span{font-size:12px;color:#71798f}
+.invoice-drop-zone{min-height:76px;border:1px dashed #c9cde0;border-radius:9px;background:#fafaff;display:flex;align-items:center;justify-content:center;gap:12px;color:#71798f}
+.invoice-drop-zone input{display:none}
+.reminder-banner{display:flex;gap:12px;align-items:center;margin-bottom:14px;padding:12px 16px;border:1px solid #f1d899;background:#fff9e9;border-radius:8px;color:#805d18;font-size:13px}
+@media(max-width:760px){.line-item-row{grid-template-columns:1fr 1fr}.line-item-row .link{justify-self:start}}
