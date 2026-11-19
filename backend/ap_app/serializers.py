@@ -289,6 +289,11 @@ class ApprovalRuleSerializer(serializers.ModelSerializer):
 class ApprovalSerializer(serializers.ModelSerializer):
     approver_name = serializers.CharField(source="approver.username", read_only=True)
     invoice_number = serializers.CharField(source="invoice.invoice_number", read_only=True)
+    # Read-only invoice context for the approval queue cards (additive).
+    vendor_name = serializers.CharField(source="invoice.vendor.name", read_only=True)
+    invoice_total_amount = serializers.DecimalField(source="invoice.total_amount", max_digits=14, decimal_places=2, read_only=True)
+    invoice_due_date = serializers.DateField(source="invoice.due_date", read_only=True)
+    invoice_status = serializers.CharField(source="invoice.status", read_only=True)
     class Meta:
         model = Approval
         fields = "__all__"

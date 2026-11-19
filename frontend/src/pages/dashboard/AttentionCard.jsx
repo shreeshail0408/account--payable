@@ -149,7 +149,7 @@ function AttentionSection({ config, data }) {
       {data.count > 0 && (
         <Link
           to={config.viewAll(data)}
-          className="inline-flex items-center gap-1 self-start rounded-sm text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/35"
+          className="inline-flex items-center gap-1 self-start rounded-sm text-xs font-medium text-link outline-none hover:underline focus-visible:ring-[3px] focus-visible:ring-ring/35"
         >
           {more > 0 ? `View all ${formatNumber(data.count)}` : "View in list"}
           <ArrowRight className="size-3.5" aria-hidden="true" />

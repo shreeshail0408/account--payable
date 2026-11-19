@@ -2,13 +2,9 @@ import React, { lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./auth";
 import { AppShell } from "./layout/AppShell";
-import { LegacyPage } from "./layout/LegacyPage";
 import { PageFallback } from "./layout/PageFallback";
 import { RouteErrorBoundary } from "./layout/RouteErrorBoundary";
 import { NAV_ITEMS, canAccess } from "./layout/nav";
-
-// Legacy pages import { useAuth } from "../App"; keep that path working.
-export { useAuth };
 
 // Each page is its own chunk.
 const Login = lazy(() => import("./pages/Login"));
@@ -23,18 +19,17 @@ const Reports = lazy(() => import("./pages/Reports"));
 const Employees = lazy(() => import("./pages/Employees"));
 const Styleguide = lazy(() => import("./pages/Styleguide"));
 
-/** `legacy: true` pages still use the old stylesheets and get the LegacyPage wrapper. */
 const PAGE_ROUTES = [
-  { nav: NAV_ITEMS.dashboard, Component: Dashboard, legacy: false },
-  { nav: NAV_ITEMS.invoices, Component: Invoices, legacy: true },
-  { nav: NAV_ITEMS.vendors, Component: Vendors, legacy: true },
-  { nav: NAV_ITEMS.purchaseOrders, Component: PurchaseOrders, legacy: true },
-  { nav: NAV_ITEMS.goodsReceipts, Component: GoodsReceipts, legacy: true },
-  { nav: NAV_ITEMS.approvals, Component: Approvals, legacy: true },
-  { nav: NAV_ITEMS.payments, Component: Payments, legacy: true },
-  { nav: NAV_ITEMS.reports, Component: Reports, legacy: true },
-  { nav: NAV_ITEMS.employees, Component: Employees, legacy: true },
-  { nav: NAV_ITEMS.styleguide, Component: Styleguide, legacy: false },
+  { nav: NAV_ITEMS.dashboard, Component: Dashboard },
+  { nav: NAV_ITEMS.invoices, Component: Invoices },
+  { nav: NAV_ITEMS.vendors, Component: Vendors },
+  { nav: NAV_ITEMS.purchaseOrders, Component: PurchaseOrders },
+  { nav: NAV_ITEMS.goodsReceipts, Component: GoodsReceipts },
+  { nav: NAV_ITEMS.approvals, Component: Approvals },
+  { nav: NAV_ITEMS.payments, Component: Payments },
+  { nav: NAV_ITEMS.reports, Component: Reports },
+  { nav: NAV_ITEMS.employees, Component: Employees },
+  { nav: NAV_ITEMS.styleguide, Component: Styleguide },
 ];
 
 function RequireAuth() {
@@ -69,15 +64,12 @@ function PublicOnly() {
   );
 }
 
-function pageElement({ nav, Component, legacy }) {
-  const page = legacy ? (
-    <LegacyPage>
+function pageElement({ nav, Component }) {
+  return (
+    <RequireRole item={nav}>
       <Component />
-    </LegacyPage>
-  ) : (
-    <Component />
+    </RequireRole>
   );
-  return <RequireRole item={nav}>{page}</RequireRole>;
 }
 
 function AppRoutes() {

@@ -19,6 +19,8 @@ import {
   Upload,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { SegmentedControl } from "@/components/ui/segmented-control";
+import { PatternsSection } from "./styleguide/PatternsSection";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -127,6 +129,7 @@ const SECTIONS = [
   ["overlays", "Dialog & Sheet"],
   ["menus", "Menu, Tabs & Tooltip"],
   ["feedback", "Toast & states"],
+  ["patterns", "Page patterns"],
   ["command", "Command"],
 ];
 
@@ -211,6 +214,7 @@ export default function Styleguide() {
         <OverlaysSection />
         <MenusSection />
         <FeedbackSection />
+        <PatternsSection Section={Section} Specimen={Specimen} />
         <CommandSection onOpenPalette={() => setCommandOpen(true)} />
       </div>
 
@@ -248,22 +252,17 @@ function StyleguideHeader() {
 
 function ThemeSwitcher() {
   const { theme, setTheme } = useTheme();
-  const options = [
-    ["light", "Light", Sun],
-    ["dark", "Dark", Moon],
-    ["system", "System", Monitor],
-  ];
   return (
-    <Tabs value={theme} onValueChange={setTheme}>
-      <TabsList aria-label="Theme">
-        {options.map(([value, label, Icon]) => (
-          <TabsTrigger key={value} value={value}>
-            <Icon aria-hidden="true" />
-            {label}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-    </Tabs>
+    <SegmentedControl
+      label="Theme"
+      value={theme}
+      onValueChange={setTheme}
+      options={[
+        { value: "light", label: "Light", icon: Sun },
+        { value: "dark", label: "Dark", icon: Moon },
+        { value: "system", label: "System", icon: Monitor },
+      ]}
+    />
   );
 }
 

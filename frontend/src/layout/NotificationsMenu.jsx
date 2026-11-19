@@ -66,7 +66,7 @@ export function NotificationsMenu({ role, notifications }) {
         >
           <Bell />
           {unreadCount > 0 && (
-            <span className="absolute right-1 top-1 flex min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-semibold leading-4 text-danger-foreground tabular-nums">
+            <span className="absolute right-1 top-1 flex min-w-4 items-center justify-center rounded-full bg-danger-solid px-1 text-[10px] font-semibold leading-4 text-danger-foreground tabular-nums">
               {countLabel}
             </span>
           )}

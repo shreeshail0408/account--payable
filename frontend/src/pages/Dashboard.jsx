@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CircleAlert, RefreshCw } from "lucide-react";
 import api from "@/services/api";
 import { useAuth } from "@/auth";
+import { Page, PageHeader } from "@/components/page";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,22 +54,17 @@ export default function Dashboard() {
   const { data, error, refreshing, updatedAt, reload } = useDashboardData();
 
   return (
-    <div data-ui="" className="flex flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
-            Accounts payable overview
-            {updatedAt && ` · updated ${formatDateTime(updatedAt)}`}
-          </p>
-        </div>
-        {data && (
+    <Page>
+      <PageHeader
+        title="Dashboard"
+        description={`Accounts payable overview${updatedAt ? ` · updated ${formatDateTime(updatedAt)}` : ""}`}
+        actions={data && (
           <Button variant="outline" size="sm" onClick={reload} loading={refreshing}>
             {!refreshing && <RefreshCw />}
             Refresh
           </Button>
         )}
-      </header>
+      />
 
       <DashboardBody
         data={data}
@@ -77,7 +73,7 @@ export default function Dashboard() {
         role={user?.role}
         onRetry={reload}
       />
-    </div>
+    </Page>
   );
 }
 

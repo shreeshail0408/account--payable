@@ -2,11 +2,10 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 
 /*
  * Light/dark theme. Applies the `dark` class to <html> so portal content (dialogs, menus)
- * picks it up too. Defaults to "light" while legacy pages (light-only) are still in use;
- * switch the default to "system" once the migration is complete.
+ * picks it up too. Defaults to the OS preference ("system") until the user picks one.
  */
 const STORAGE_KEY = "ap-theme";
-const DEFAULT_THEME = "light";
+const DEFAULT_THEME = "system";
 const THEMES = ["light", "dark", "system"];
 
 const ThemeContext = createContext({

@@ -2,6 +2,22 @@
 
 A full-stack AP automation application built with React/Vite, Django REST Framework, and PostgreSQL.
 
+![Dashboard (light, 1440px)](docs/screenshots/dashboard-light-1440.png)
+
+## Screenshots
+
+Every page in light and dark at 1440px and 375px is in [`docs/screenshots/`](docs/screenshots/). Regenerate them with `npm run screenshots` (see [End-to-end tests](#end-to-end-tests-playwright)).
+
+| OCR review (dark) | Approvals queue + preview |
+|---|---|
+| ![Invoice OCR review workspace, dark theme](docs/screenshots/invoice-review-dark-1440.png) | ![Approvals queue with preview pane](docs/screenshots/approvals-light-1440.png) |
+| **Payments pipeline (dark)** | **Reports** |
+| ![Payments pipeline with demo-mode notice](docs/screenshots/payments-dark-1440.png) | ![Report cards, filters and preview](docs/screenshots/reports-light-1440.png) |
+
+| Mobile approvals | Mobile invoices (dark) | Mobile vendors | Sign in (dark) |
+|---|---|---|---|
+| ![Mobile approval cards](docs/screenshots/approvals-light-375.png) | ![Mobile invoice list](docs/screenshots/invoices-dark-375.png) | ![Mobile vendor list](docs/screenshots/vendors-light-375.png) | ![Sign in](docs/screenshots/login-dark-375.png) |
+
 ## Features
 
 - JWT authentication and role-based access control
@@ -18,6 +34,8 @@ A full-stack AP automation application built with React/Vite, Django REST Framew
 - CSV reports for AP aging, invoice status, exceptions, GST/tax, and audit activity
 - Immutable audit log records
 - Swagger/OpenAPI documentation
+- Responsive UI with light/dark themes (follows the OS by default), a ⌘/Ctrl+K command palette, a split-view OCR review workspace, and a card-per-invoice mobile approval view with large Approve/Reject buttons
+- Keyboard operable throughout, with visible focus rings and WCAG 2.1 AA color contrast in both themes (checked automatically with axe-core); animations respect *reduce motion*
 
 ## Administrator and employee accounts
 
@@ -28,6 +46,12 @@ Public registration is disabled. After applying migrations, create the first adm
 ## Sample invoice for OCR testing
 
 Use [sample-invoice.png](docs/assets/sample-invoice.png) when testing the invoice upload and OCR preview. It is explicitly marked as a demo document and is not a valid tax invoice.
+
+## Prerequisites
+
+- Python 3.8+ and PostgreSQL 12+
+- Node.js 20+ (tested with Node 24) and npm
+- Tesseract OCR and Poppler for invoice OCR (`sudo apt install tesseract-ocr poppler-utils` on Debian/Ubuntu, `brew install tesseract poppler` on macOS)
 
 ## Backend setup
 
@@ -95,10 +119,40 @@ npm run preview
 
 ## Tests
 
+Backend unit tests (need a reachable PostgreSQL to create the test database):
+
 ```bash
 cd backend
 python3 manage.py test ap_app -v 2
+python3 manage.py check
+python3 manage.py makemigrations --check --dry-run
 ```
+
+Frontend production build check:
+
+```bash
+cd frontend
+npm run build
+```
+
+### End-to-end tests (Playwright)
+
+The e2e suite starts its **own** backend and frontend: `frontend/e2e/start-backend.sh` drops and recreates a throwaway PostgreSQL database named `ap_e2e` (the name must contain `e2e`), migrates it, seeds demo users with `seed_demo`, and serves the API on port 8020. Vite runs on port 5190. Your development database and the servers on 8000/5173 are not touched. Database credentials come from `backend/.env`; the PostgreSQL user needs permission to create databases.
+
+```bash
+cd frontend
+npm install
+npx playwright install chromium   # one-time browser download
+npm run test:e2e                  # everything: smoke, accessibility, screenshots (~4 minutes)
+npm run test:smoke                # login, dashboard, single upload → review → submit, bulk upload,
+                                  # approve on a 375px phone, theme toggle
+npm run test:a11y                 # axe-core WCAG 2.1 AA on every page in light and dark, dialogs,
+                                  # 375px views, keyboard and reduced-motion checks
+npm run screenshots               # regenerates docs/screenshots/ (runs the smoke flow first for data)
+npx playwright show-report e2e/.report
+```
+
+Test-only passwords can be overridden with `E2E_ADMIN_PASSWORD` and `E2E_APPROVER_PASSWORD`, and the ports with `E2E_API_PORT` and `E2E_WEB_PORT`. Login is rate-limited to 10 per hour per IP, so the setup step signs each test user in once and reuses the session; the backend restarts (and the limit resets) on every run.
 
 ## Requirements checklist
 

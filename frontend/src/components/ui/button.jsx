@@ -7,7 +7,9 @@ import { cn } from "@/lib/utils";
 export const buttonVariants = cva(
   [
     "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md",
-    "text-sm font-medium transition-colors outline-none select-none",
+    "text-sm font-medium outline-none select-none",
+    // Subtle press feedback; durations collapse under prefers-reduced-motion (theme.css).
+    "transition-[color,background-color,border-color,box-shadow,transform] duration-150 active:scale-[0.98]",
     "focus-visible:ring-[3px] focus-visible:ring-ring/35",
     "disabled:pointer-events-none disabled:opacity-50",
     "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -19,8 +21,8 @@ export const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/70",
         outline: "border border-border-strong bg-card text-foreground shadow-card hover:bg-accent",
         ghost: "text-foreground hover:bg-accent",
-        destructive: "bg-danger text-danger-foreground shadow-card hover:bg-danger/90 focus-visible:ring-danger/35",
-        link: "h-auto px-0 text-primary underline-offset-4 hover:underline",
+        destructive: "bg-danger-solid text-danger-foreground shadow-card hover:bg-danger-solid/90 focus-visible:ring-danger/35",
+        link: "h-auto px-0 text-link underline-offset-4 hover:underline",
       },
       size: {
         sm: "h-8 px-3 text-[13px]",

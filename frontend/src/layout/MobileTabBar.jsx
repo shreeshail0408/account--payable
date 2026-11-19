@@ -25,7 +25,7 @@ export function MobileTabBar({ role, badges = {} }) {
                 className={({ isActive }) => cn(
                   "relative flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-medium outline-none",
                   "focus-visible:bg-accent",
-                  isActive ? "text-primary" : "text-muted-foreground",
+                  isActive ? "text-link" : "text-muted-foreground",
                 )}
               >
                 <span className="relative">

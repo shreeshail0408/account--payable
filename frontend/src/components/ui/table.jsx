@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 /*
@@ -6,11 +6,44 @@ import { cn } from "@/lib/utils";
  * it right-aligns the column and switches to tabular numbers.
  */
 export function Table({ className, containerClassName, ...props }) {
+  const containerRef = useRef(null);
+  const scrollable = useHorizontalOverflow(containerRef);
   return (
-    <div className={cn("relative w-full overflow-x-auto", containerClassName)}>
+    <div
+      ref={containerRef}
+      // A table wider than its container scrolls sideways; make it reachable by keyboard then.
+      tabIndex={scrollable ? 0 : undefined}
+      role={scrollable ? "region" : undefined}
+      aria-label={scrollable ? props["aria-label"] || "Scrollable table" : undefined}
+      className={cn(
+        "relative w-full overflow-x-auto rounded-[inherit] outline-none",
+        "focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/35",
+        containerClassName,
+      )}
+    >
       <table className={cn("w-full caption-bottom text-sm", className)} {...props} />
     </div>
   );
+}
+
+/** True while the element's content is wider than the element. */
+function useHorizontalOverflow(ref) {
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") {
+      return undefined;
+    }
+    const measure = () => setOverflowing(element.scrollWidth > element.clientWidth + 1);
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    if (element.firstElementChild) {
+      observer.observe(element.firstElementChild);
+    }
+    measure();
+    return () => observer.disconnect();
+  }, [ref]);
+  return overflowing;
 }
 
 export function TableHeader({ className, ...props }) {

@@ -14,11 +14,11 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import ValidationError as APIValidationError
-from rest_framework.filters import SearchFilter
+from rest_framework.filters import OrderingFilter, SearchFilter
 from .models import *
 from .serializers import *
 from .permissions import APRolePermission
-from .services import AGING_BUCKET_LABELS, DuplicateInvoiceError, aging_bucket_filters, outstanding_invoices, audit, capture_invoice_upload, extract_ocr, extract_invoice_fields, validate_and_match, create_approval_steps, notify_current_approval_step, process_approval_deadlines
+from .services import AGING_BUCKET_LABELS, line_match_rows, match_tolerances, DuplicateInvoiceError, aging_bucket_filters, outstanding_invoices, audit, capture_invoice_upload, extract_ocr, extract_invoice_fields, validate_and_match, create_approval_steps, notify_current_approval_step, process_approval_deadlines
 import csv
 import hashlib
 import json
@@ -402,6 +402,8 @@ def filter_invoice_list(queryset, params, today):
     aging=<bucket>      one dashboard aging bucket ("Not yet due", "0-30", "31-60", "61-90", "90+"); implies outstanding
     due_before=YYYY-MM-DD   due on or before this date
     needs_review=1      OCR-captured invoices whose extraction no one has reviewed yet
+    vendor=<id>         one vendor
+    date_from / date_to=YYYY-MM-DD   invoice date range (inclusive)
     """
     errors = {}
     statuses = [value.strip() for value in params.get("status", "").split(",") if value.strip()]
@@ -433,6 +435,21 @@ def filter_invoice_list(queryset, params, today):
     if params.get("needs_review", "").lower() in TRUE_VALUES:
         queryset = queryset.exclude(ocr_text="").filter(extraction_reviewed_at__isnull=True)
 
+    vendor = params.get("vendor", "").strip()
+    if vendor:
+        if vendor.isdigit():
+            queryset = queryset.filter(vendor_id=int(vendor))
+        else:
+            errors["vendor"] = ["Use a vendor id."]
+
+    for key, lookup in (("date_from", "invoice_date__gte"), ("date_to", "invoice_date__lte")):
+        value = params.get(key, "").strip()
+        if value:
+            try:
+                queryset = queryset.filter(**{lookup: date.fromisoformat(value)})
+            except ValueError:
+                errors[key] = ["Use the YYYY-MM-DD date format."]
+
     if errors:
         raise APIValidationError(errors)
     return queryset
@@ -441,8 +458,10 @@ def filter_invoice_list(queryset, params, today):
 class InvoiceViewSet(BaseViewSet):
     queryset = Invoice.objects.select_related("vendor", "purchase_order", "created_by").prefetch_related("lines").all().order_by("-created_at")
     serializer_class = InvoiceSerializer
-    filter_backends = [SearchFilter]
+    filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ["invoice_number", "vendor__name", "status"]
+    # ?ordering=due_date / -total_amount ...; without it the default -created_at order is unchanged.
+    ordering_fields = ["invoice_number", "vendor__name", "invoice_date", "due_date", "total_amount", "status", "ocr_accuracy", "created_at"]
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -645,6 +664,76 @@ class InvoiceViewSet(BaseViewSet):
             "verified_fields": InvoiceFieldVerificationSerializer(records, many=True).data,
         })
 
+    @action(detail=False, methods=["get"], url_path="match-settings")
+    def match_settings(self, request):
+        """PO matching tolerances, so the capture screen can preview a 2-way/3-way match."""
+        return Response(match_tolerances())
+
+    @action(detail=True, methods=["get"])
+    def activity(self, request, pk=None):
+        """Read-only detail for the invoice drawer: per-line PO/GRN comparison, approval steps,
+        payment and audit events. Sections follow the existing read rules: a section the
+        role can't read elsewhere comes back as null and is listed in ``restricted``."""
+        invoice = self.get_object()
+        role = request.user.role
+        restricted = []
+
+        approvals = None
+        if role in (User.Roles.ADMIN, User.Roles.AUDITOR, User.Roles.APPROVER):
+            queryset = invoice.approvals.select_related("approver", "rule").order_by("sequence", "pk")
+            if role == User.Roles.APPROVER:
+                queryset = queryset.filter(approver=request.user)
+            approvals = [{
+                "id": step.pk,
+                "sequence": step.sequence,
+                "parallel": step.rule.parallel,
+                "rule_name": step.rule.name,
+                "approver_name": step.approver.username,
+                "status": step.status,
+                "due_at": step.due_at,
+                "decided_at": step.decided_at,
+                "comments": step.comments,
+            } for step in queryset]
+            if role == User.Roles.APPROVER:
+                restricted.append("other_approvals")
+        else:
+            restricted.append("approvals")
+
+        payment = None
+        if role in (User.Roles.ADMIN, User.Roles.ACCOUNTANT, User.Roles.AUDITOR):
+            record = Payment.objects.filter(invoice=invoice).first()
+            payment = PaymentSerializer(record).data if record else None
+        else:
+            restricted.append("payment")
+
+        audit_events = None
+        if role in (User.Roles.ADMIN, User.Roles.AUDITOR):
+            related = Q(entity_type="Invoice", entity_id=invoice.pk)
+            approval_ids = list(invoice.approvals.values_list("pk", flat=True))
+            if approval_ids:
+                related |= Q(entity_type="Approval", entity_id__in=approval_ids)
+            payment_id = Payment.objects.filter(invoice=invoice).values_list("pk", flat=True).first()
+            if payment_id:
+                related |= Q(entity_type="Payment", entity_id=payment_id)
+            audit_events = AuditLogSerializer(
+                AuditLog.objects.filter(related).select_related("actor").order_by("-timestamp", "-pk")[:100],
+                many=True,
+            ).data
+        else:
+            restricted.append("audit")
+
+        return Response({
+            "invoice": invoice.pk,
+            "match_type": invoice.match_type,
+            "purchase_order_number": invoice.purchase_order.number if invoice.purchase_order_id else None,
+            "match_tolerances": match_tolerances(),
+            "lines": line_match_rows(invoice),
+            "approvals": approvals,
+            "payment": payment,
+            "audit": audit_events,
+            "restricted": restricted,
+        })
+
     @action(detail=True, methods=["post"], url_path="sync-erp")
     def sync_erp(self, request, pk=None):
         invoice = self.get_object()
@@ -689,7 +778,7 @@ class ApprovalRuleViewSet(BaseViewSet):
 class ApprovalViewSet(viewsets.ReadOnlyModelViewSet):
     """Role gate first (APRolePermission: read ADMIN/APPROVER/AUDITOR, decide APPROVER/ADMIN),
     then the per-object checks below: queryset scoping, assigned approver, admin-only escalation."""
-    queryset = Approval.objects.select_related("invoice", "approver", "rule").all().order_by("sequence")
+    queryset = Approval.objects.select_related("invoice", "invoice__vendor", "approver", "rule").all().order_by("sequence")
     serializer_class = ApprovalSerializer
     permission_classes = [APRolePermission]
     filter_backends = [SearchFilter]
@@ -925,6 +1014,12 @@ class VendorOnboardingViewSet(viewsets.ReadOnlyModelViewSet):
         queryset = super().get_queryset()
         if self.request.user.role == User.Roles.AP_CLERK:
             queryset = queryset.filter(submitted_by=self.request.user)
+        # Optional ?vendor=<id> (additive): the vendor drawer's onboarding timeline.
+        vendor = self.request.query_params.get("vendor", "").strip()
+        if vendor:
+            if not vendor.isdigit():
+                raise APIValidationError({"vendor": ["Use a vendor id."]})
+            queryset = queryset.filter(vendor_id=int(vendor))
         return queryset
 
 class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
@@ -978,6 +1073,19 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = AuditLog.objects.select_related("actor").all().order_by("-timestamp")
     serializer_class = AuditLogSerializer
     permission_classes = [APRolePermission]
+
+    def get_queryset(self):
+        """Optional (additive) ?entity_type=Vendor&entity_id=<id> filters for record timelines."""
+        queryset = super().get_queryset()
+        entity_type = self.request.query_params.get("entity_type", "").strip()
+        entity_id = self.request.query_params.get("entity_id", "").strip()
+        if entity_type:
+            queryset = queryset.filter(entity_type=entity_type[:100])
+        if entity_id:
+            if not entity_id.isdigit():
+                raise APIValidationError({"entity_id": ["Use a numeric id."]})
+            queryset = queryset.filter(entity_id=int(entity_id))
+        return queryset
 
 ATTENTION_ITEMS = 5
 

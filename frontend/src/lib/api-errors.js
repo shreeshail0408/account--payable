@@ -52,3 +52,18 @@ export function flattenErrors(data) {
 export function isForbidden(error) {
   return error?.response?.status === 403;
 }
+
+/** DRF 400 field errors -> {field: "message"} for inline display; other errors return {}. */
+export function fieldErrorsFrom(error, fields) {
+  const data = error?.response?.status === 400 ? error.response.data : null;
+  if (!data || typeof data !== "object") {
+    return {};
+  }
+  const result = {};
+  fields.forEach((field) => {
+    if (data[field]) {
+      result[field] = flattenErrors(data[field]);
+    }
+  });
+  return result;
+}

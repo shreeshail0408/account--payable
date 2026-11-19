@@ -21,7 +21,7 @@ from pdf2image.exceptions import (
     PopplerNotInstalledError,
 )
 from pytesseract import TesseractError
-from .models import APNotification, AuditLog, Approval, ApprovalRule, Invoice, InvoiceLine, User
+from .models import APNotification, AuditLog, Approval, ApprovalRule, GRNLine, Invoice, InvoiceLine, User
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,33 @@ def audit(actor, action, obj, details=None):
         entity_type=obj.__class__.__name__, entity_id=obj.pk,
         details=details or {},
     )
+
+class OcrText(str):
+    """OCR output text that also carries Tesseract's mean word confidence per line.
+
+    A plain ``str`` everywhere it is stored or compared; ``line_confidence[i]`` is the
+    confidence (0-100) of ``text.splitlines()[i]``, or None for lines without words.
+    """
+
+    def __new__(cls, text, line_confidence=None):
+        value = super().__new__(cls, text)
+        value.line_confidence = list(line_confidence or [])
+        return value
+
+
+FIELD_CONFIDENCE_HIGH = 85
+FIELD_CONFIDENCE_MEDIUM = 60
+
+
+def confidence_level(score):
+    if score is None:
+        return "low"
+    if score >= FIELD_CONFIDENCE_HIGH:
+        return "high"
+    if score >= FIELD_CONFIDENCE_MEDIUM:
+        return "medium"
+    return "low"
+
 
 def extract_ocr(file_path):
     max_pages = 100
@@ -58,6 +85,7 @@ def extract_ocr(file_path):
             try:
                 result = pytesseract.image_to_data(page, output_type=pytesseract.Output.DICT, timeout=30)
                 line_words = {}
+                line_scores = {}
                 for index, word in enumerate(result["text"]):
                     word = word.strip()
                     if not word:
@@ -68,17 +96,32 @@ def extract_ocr(file_path):
                         result["line_num"][index],
                     )
                     line_words.setdefault(line_key, []).append(word)
+                    score = str(result["conf"][index]).strip()
+                    if score not in ("", "-1"):
+                        line_scores.setdefault(line_key, []).append(float(score))
                 lines = [" ".join(words) for words in line_words.values()]
+                per_line = [
+                    round(sum(line_scores[key]) / len(line_scores[key]), 2) if line_scores.get(key) else None
+                    for key in line_words
+                ]
                 confidences = [float(value) for value in result["conf"] if str(value).strip() not in ("", "-1")]
-                pages.append((page_number, "\n".join(lines), confidences))
+                pages.append((page_number, "\n".join(lines), confidences, per_line))
             finally:
                 page.close()
-        page_text = [f"[Page {number}]\n{text}" for number, text, _ in pages]
-        if not any(text.strip() for _number, text, _scores in pages):
+        page_text = [f"[Page {number}]\n{text}" for number, text, _scores, _per_line in pages]
+        if not any(text.strip() for _number, text, _scores, _per_line in pages):
             raise RuntimeError("No readable text was extracted. Review the invoice manually.")
-        confidences = [value for _, _, scores in pages for value in scores]
+        confidences = [value for _, _, scores, _per_line in pages for value in scores]
         accuracy = sum(confidences) / len(confidences) if confidences else 0
-        return "\n\n".join(page_text), round(accuracy, 2)
+        # Line confidences aligned with the joined text: a blank separator line between
+        # pages and a "[Page n]" header line carry no score.
+        line_confidence = []
+        for position, (_number, text, _scores, per_line) in enumerate(pages):
+            if position:
+                line_confidence.append(None)
+            line_confidence.append(None)
+            line_confidence.extend(per_line if text else [])
+        return OcrText("\n\n".join(page_text), line_confidence), round(accuracy, 2)
     except (
         OSError, RuntimeError, UnidentifiedImageError, Image.DecompressionBombError, TesseractError, PDFInfoNotInstalledError,
         PDFPageCountError, PDFPopplerTimeoutError, PopplerNotInstalledError,
@@ -93,15 +136,24 @@ def extract_invoice_fields(text):
     normalized_text = re.sub(r"\btotat\b|\btota1\b", "total", normalized_text, flags=re.IGNORECASE)
     normalized_text = re.sub(r"\binvoice\s+na\b|\binvoice\s+n0\b", "invoice no", normalized_text, flags=re.IGNORECASE)
 
-    def labeled_value(labels):
+    # Source line (index into text.splitlines()) of each regex-extracted field, for confidence.
+    same_line_layout = normalized_text.count("\n") == text.count("\n")
+    sources = {}
+
+    def line_of(match):
+        return normalized_text.count("\n", 0, match.start(1)) if same_line_layout else None
+
+    def labeled_value(labels, key):
         labels_pattern = "|".join(labels)
         match = re.search(
             rf"(?im)^\s*(?:{labels_pattern})\s*[:#-]?\s*(?:₹|INR|Rs\.?\s*)?([\d,]+(?:\.\d{{1,2}})?)",
             normalized_text,
         )
+        if match:
+            sources[key] = line_of(match)
         return Decimal(match.group(1).replace(",", "")) if match else None
 
-    def labeled_date(labels):
+    def labeled_date(labels, key):
         labels_pattern = "|".join(labels)
         match = re.search(
             rf"(?im)^\s*(?:{labels_pattern})\s*[:#-]?\s*(\d{{1,2}}[/-]\d{{1,2}}[/-]\d{{2,4}}|\d{{4}}[/-]\d{{1,2}}[/-]\d{{1,2}})",
@@ -109,6 +161,7 @@ def extract_invoice_fields(text):
         )
         if not match:
             return None
+        sources[key] = line_of(match)
         value = match.group(1).replace("/", "-")
         for date_format in ("%Y-%m-%d", "%d-%m-%Y", "%d-%m-%y"):
             try:
@@ -122,7 +175,12 @@ def extract_invoice_fields(text):
         normalized_text,
     )
     gstin_match = re.search(r"\b\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]\b", text.upper())
+    if number_match:
+        sources["invoice_number"] = line_of(number_match)
+    if gstin_match:
+        sources["gstin"] = text.upper().count("\n", 0, gstin_match.start())
     line_items = []
+    line_item_sources = []
     number_pattern = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,3})?"
     money_pattern = r"(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?"
     row_pattern = re.compile(
@@ -131,7 +189,7 @@ def extract_invoice_fields(text):
         rf"(?:₹|INR|Rs\.?\s*)?(?P<amount>{money_pattern})\s*$",
         re.IGNORECASE,
     )
-    for raw_line in text.splitlines():
+    for line_index, raw_line in enumerate(text.splitlines()):
         match = row_pattern.match(raw_line)
         if not match:
             continue
@@ -150,18 +208,60 @@ def extract_invoice_fields(text):
             "tax_rate": Decimal("0"),
             "amount": amount,
         })
+        line_item_sources.append(line_index)
 
     fields = {
         "invoice_number": number_match.group(1) if number_match else None,
-        "invoice_date": labeled_date(["invoice date", "date"]),
-        "due_date": labeled_date(["due date", "payment due"]),
-        "subtotal": labeled_value(["subtotal", "sub total", "taxable value", "taxable amount"]),
-        "tax_amount": labeled_value(["total tax", "tax amount", "gst amount"]),
-        "total_amount": labeled_value(["grand total", "invoice total", "total amount", "amount payable"]),
+        "invoice_date": labeled_date(["invoice date", "date"], "invoice_date"),
+        "due_date": labeled_date(["due date", "payment due"], "due_date"),
+        "subtotal": labeled_value(["subtotal", "sub total", "taxable value", "taxable amount"], "subtotal"),
+        "tax_amount": labeled_value(["total tax", "tax amount", "gst amount"], "tax_amount"),
+        "total_amount": labeled_value(["grand total", "invoice total", "total amount", "amount payable"], "total_amount"),
         "gstin": gstin_match.group(0) if gstin_match else None,
         "line_items": line_items,
     }
-    return enrich_invoice_fields_with_local_model(text, fields)
+    regex_fields = {key: value for key, value in fields.items() if key != "line_items"}
+    regex_line_count = len(line_items)
+    fields = enrich_invoice_fields_with_local_model(text, fields)
+    line_confidence = getattr(text, "line_confidence", None)
+    if line_confidence:
+        fields["field_confidence"] = build_field_confidence(
+            fields, regex_fields, regex_line_count, sources, line_item_sources, line_confidence,
+        )
+    return fields
+
+
+CONFIDENCE_FIELDS = ("invoice_number", "invoice_date", "due_date", "subtotal", "tax_amount", "total_amount", "gstin")
+
+
+def build_field_confidence(fields, regex_fields, regex_line_count, sources, line_item_sources, line_confidence):
+    """Per-field OCR confidence: the Tesseract word confidence of the line a value was read from.
+
+    level is high / medium / low / missing. Values filled by the local model have no source
+    line in the OCR text, so they are reported as low confidence with source "model".
+    """
+    def score_for(line_index):
+        if line_index is None or line_index >= len(line_confidence):
+            return None
+        return line_confidence[line_index]
+
+    def entry(score, source):
+        return {"score": score, "level": confidence_level(score), "source": source}
+
+    result = {}
+    for key in CONFIDENCE_FIELDS:
+        if fields.get(key) is None:
+            result[key] = {"score": None, "level": "missing", "source": "none"}
+        elif regex_fields.get(key) is None:
+            result[key] = entry(None, "model")
+        else:
+            result[key] = entry(score_for(sources.get(key)), "ocr")
+    lines = fields.get("line_items") or []
+    if len(lines) == regex_line_count:
+        result["line_items"] = [entry(score_for(index), "ocr") for index in line_item_sources]
+    else:
+        result["line_items"] = [entry(None, "model") for _line in lines]
+    return result
 
 
 def enrich_invoice_fields_with_local_model(text, fields):
@@ -407,6 +507,84 @@ def aging_bucket_filters(today):
         ("61-90", {"due_date__lte": days_ago(61), "due_date__gte": days_ago(90)}),
         ("90+", {"due_date__lte": days_ago(91)}),
     ]
+
+
+def match_tolerances():
+    """The PO matching tolerances validate_and_match applies (settings, with its defaults)."""
+    return {
+        "line_amount": str(Decimal(str(getattr(settings, "PO_MATCH_LINE_TOLERANCE", "0.01")))),
+        "invoice_amount": str(Decimal(str(getattr(settings, "PO_MATCH_AMOUNT_TOLERANCE", "0.01")))),
+        "quantity_percent": str(Decimal(str(getattr(settings, "PO_MATCH_QUANTITY_TOLERANCE_PERCENT", "0")))),
+        "price_percent": str(Decimal(str(getattr(settings, "PO_MATCH_PRICE_TOLERANCE_PERCENT", "1")))),
+    }
+
+
+def line_match_rows(invoice):
+    """Per invoice line: the invoice values beside the linked PO line and its goods receipts.
+
+    Read-only view of the same checks validate_and_match runs (description, unit price,
+    quantity against ordered/received incl. other invoices, line amount); the invoice's
+    ``exceptions`` stay the authoritative result.
+    """
+    tolerances = {key: Decimal(value) for key, value in match_tolerances().items()}
+    rows = []
+    current_quantities = {}
+    for line in invoice.lines.select_related("po_line").order_by("pk"):
+        row = {
+            "line_id": line.pk,
+            "description": line.description,
+            "quantity": line.quantity,
+            "unit_price": line.unit_price,
+            "tax_rate": line.tax_rate,
+            "amount": line.amount,
+            "po_line": None,
+            "receipts": [],
+            "checks": {},
+            "status": "not_required" if invoice.match_type == "NONE" else "unlinked",
+        }
+        po_line = line.po_line
+        if po_line is None or (invoice.purchase_order_id and po_line.purchase_order_id != invoice.purchase_order_id):
+            rows.append(row)
+            continue
+        row["po_line"] = {
+            "id": po_line.pk,
+            "description": po_line.description,
+            "quantity": po_line.quantity,
+            "unit_price": po_line.unit_price,
+            "received_quantity": po_line.received_quantity,
+        }
+        row["receipts"] = [
+            {"grn_id": receipt.grn_id, "grn_number": receipt.grn.number,
+             "received_date": receipt.grn.received_date, "quantity": receipt.quantity}
+            for receipt in GRNLine.objects.filter(po_line=po_line).select_related("grn").order_by("grn__received_date", "pk")
+        ]
+        same_description = " ".join(line.description.casefold().split()) == " ".join(po_line.description.casefold().split())
+        price_ok = abs(line.unit_price - po_line.unit_price) <= po_line.unit_price * tolerances["price_percent"] / Decimal("100")
+        base_quantity = po_line.received_quantity if invoice.match_type == "3WAY" else po_line.quantity
+        previously_invoiced = InvoiceLine.objects.filter(
+            po_line=po_line, invoice__purchase_order_id=po_line.purchase_order_id,
+        ).exclude(invoice=invoice).exclude(invoice__status=Invoice.Status.REJECTED).aggregate(total=Sum("quantity"))["total"] or Decimal("0")
+        total_quantity = previously_invoiced + current_quantities.get(po_line.pk, Decimal("0")) + line.quantity
+        current_quantities[po_line.pk] = current_quantities.get(po_line.pk, Decimal("0")) + line.quantity
+        quantity_limit = base_quantity * (1 + tolerances["quantity_percent"] / Decimal("100"))
+        quantity_ok = total_quantity <= quantity_limit and not (quantity_limit <= 0 and invoice.match_type == "3WAY")
+        expected_amount = line.quantity * po_line.unit_price
+        allowed = max(expected_amount * tolerances["price_percent"] / Decimal("100"), tolerances["line_amount"])
+        amount_ok = abs(line.amount - expected_amount) <= allowed
+        row["previously_invoiced_quantity"] = previously_invoiced
+        row["quantity_basis"] = "received" if invoice.match_type == "3WAY" else "ordered"
+        row["checks"] = {
+            "description": "ok" if same_description else "fail",
+            "unit_price": "ok" if price_ok else "fail",
+            "quantity": "ok" if quantity_ok else "fail",
+            "amount": "ok" if amount_ok else "fail",
+        }
+        if invoice.match_type == "NONE":
+            row["status"] = "not_required"
+        else:
+            row["status"] = "matched" if all(value == "ok" for value in row["checks"].values()) else "mismatch"
+        rows.append(row)
+    return rows
 
 
 def validate_and_match(invoice):
