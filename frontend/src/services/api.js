@@ -36,7 +36,7 @@ api.interceptors.response.use(
       localStorage.removeItem("access");
       localStorage.removeItem("user");
       localStorage.removeItem("refresh");
-      if (!window.location.pathname.includes("/login")) window.location.href = "/login";
+      if (!window.location.pathname.includes("/login")) window.location.href = `${import.meta.env.BASE_URL}login`;
     }
     return Promise.reject(error);
   }

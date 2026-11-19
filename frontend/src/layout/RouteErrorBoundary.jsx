@@ -69,7 +69,7 @@ export class RouteErrorBoundary extends React.Component {
               <RefreshCw />
               {chunkError ? "Reload page" : "Try again"}
             </Button>
-            <Button variant="outline" onClick={() => window.location.assign("/")}>
+            <Button variant="outline" onClick={() => window.location.assign(import.meta.env.BASE_URL)}>
               Go to dashboard
             </Button>
           </div>

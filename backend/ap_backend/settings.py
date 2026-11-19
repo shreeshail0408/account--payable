@@ -32,6 +32,9 @@ check_secret_key(SECRET_KEY, DEBUG)
 if not SECRET_KEY:
     SECRET_KEY = secrets.token_urlsafe(48)
 ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if host.strip()]
+# Render sets RENDER_EXTERNAL_HOSTNAME (e.g. payflow-ap-api.onrender.com) on its web services.
+if os.getenv("RENDER_EXTERNAL_HOSTNAME"):
+    ALLOWED_HOSTS.append(os.environ["RENDER_EXTERNAL_HOSTNAME"])
 
 INSTALLED_APPS = [
     "django.contrib.admin", "django.contrib.auth", "django.contrib.contenttypes",
