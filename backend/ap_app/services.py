@@ -1,4 +1,6 @@
 import logging
+import os
+import threading
 import hashlib
 import json
 import re
@@ -59,29 +61,67 @@ def confidence_level(score):
     return "low"
 
 
+# OCR memory budget. Small hosts (e.g. 512 MB free tiers) get killed if a request decodes a whole PDF or a
+# 50-megapixel photo at once, which takes the API down for every user. So pages are rendered and OCR'd
+# one at a time, in grayscale, scaled to at most ~300 dpi A4, and only OCR_MAX_CONCURRENT run per process.
+OCR_MAX_PAGES = 100
+OCR_MAX_SIDE_PX = 3500
+OCR_PDF_DPI = 200
+_OCR_SLOTS = threading.BoundedSemaphore(max(1, int(os.getenv("OCR_MAX_CONCURRENT", "1"))))
+
+
+def _ocr_ready(image):
+    """Grayscale copy, scaled down so the longer side is at most OCR_MAX_SIDE_PX."""
+    page = image.convert("L")
+    if max(page.size) > OCR_MAX_SIDE_PX:
+        page.thumbnail((OCR_MAX_SIDE_PX, OCR_MAX_SIDE_PX), Image.LANCZOS)
+    return page
+
+
+def _ocr_pages(file_path):
+    """Yield (page_number, image) one page at a time, so only one page is in memory."""
+    if Path(file_path).suffix.lower() == ".pdf":
+        from pdf2image import convert_from_path, pdfinfo_from_path
+        page_count = int(pdfinfo_from_path(file_path, timeout=30).get("Pages", 0))
+        if page_count < 1:
+            raise RuntimeError("The PDF contains no readable pages.")
+        if page_count > OCR_MAX_PAGES:
+            raise RuntimeError(f"The PDF has {page_count} pages; the limit is {OCR_MAX_PAGES}.")
+        for page_number in range(1, page_count + 1):
+            rendered = convert_from_path(
+                file_path, timeout=60, thread_count=1, dpi=OCR_PDF_DPI, grayscale=True,
+                first_page=page_number, last_page=page_number,
+            )
+            for image in rendered:
+                try:
+                    yield page_number, _ocr_ready(image)
+                finally:
+                    image.close()
+        return
+    with Image.open(file_path) as image:
+        frames = getattr(image, "n_frames", 1)  # single-frame formats (e.g. JPEG) may not define it
+        if frames > OCR_MAX_PAGES:
+            raise RuntimeError(f"The image has {frames} frames; the limit is {OCR_MAX_PAGES}.")
+        if image.width * image.height > 80_000_000:
+            raise RuntimeError("The image dimensions exceed the OCR processing limit.")
+        if image.format == "JPEG":
+            # Let the JPEG decoder shrink while decoding instead of materialising every pixel.
+            image.draft("L", (OCR_MAX_SIDE_PX, OCR_MAX_SIDE_PX))
+        for page_number, frame in enumerate(ImageSequence.Iterator(image), start=1):
+            yield page_number, _ocr_ready(frame)
+
+
 def extract_ocr(file_path):
-    max_pages = 100
+    with _OCR_SLOTS:
+        return _extract_ocr(file_path)
+
+
+def _extract_ocr(file_path):
     try:
         if not shutil.which("tesseract"):
             raise RuntimeError("Tesseract OCR is not installed or is not on PATH.")
-        if Path(file_path).suffix.lower() == ".pdf":
-            from pdf2image import convert_from_path, pdfinfo_from_path
-            page_count = int(pdfinfo_from_path(file_path, timeout=30).get("Pages", 0))
-            if page_count < 1:
-                raise RuntimeError("The PDF contains no readable pages.")
-            if page_count > max_pages:
-                raise RuntimeError(f"The PDF has {page_count} pages; the limit is {max_pages}.")
-            images = convert_from_path(file_path, timeout=60, thread_count=1, dpi=200)
-        else:
-            with Image.open(file_path) as image:
-                if image.n_frames > max_pages:
-                    raise RuntimeError(f"The image has {image.n_frames} frames; the limit is {max_pages}.")
-                if image.width * image.height > 80_000_000:
-                    raise RuntimeError("The image dimensions exceed the OCR processing limit.")
-                images = [page.copy() for page in ImageSequence.Iterator(image)]
-
         pages = []
-        for page_number, page in enumerate(images, start=1):
+        for page_number, page in _ocr_pages(file_path):
             try:
                 result = pytesseract.image_to_data(page, output_type=pytesseract.Output.DICT, timeout=30)
                 line_words = {}

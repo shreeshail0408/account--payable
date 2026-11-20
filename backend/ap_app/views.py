@@ -3,11 +3,11 @@ from decimal import Decimal, InvalidOperation
 from django.db.models import Sum, Count, Avg, F, Q
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import viewsets, status
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -225,6 +225,20 @@ def employee_activation(request, pk):
     employee.save(update_fields=["is_active"])
     audit(request.user, "employee.activation_changed", employee, {"is_active": employee.is_active})
     return Response(EmployeeSerializer(employee).data)
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+@authentication_classes([])
+@throttle_classes([])
+def health(request):
+    """Cheap liveness + database check for the host's health checks (no auth, no schema generation)."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+    except DatabaseError:
+        return Response({"status": "error", "database": "unreachable"}, status=503)
+    return Response({"status": "ok"})
+
 
 @api_view(["GET"])
 def me(request):

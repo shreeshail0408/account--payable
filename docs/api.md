@@ -19,6 +19,7 @@ Interactive Swagger/OpenAPI documentation:
   `LOGIN_LOCKOUT_MINUTES` (default 15): `429 {detail, code: "account_locked"}`. Per-IP limit: 30/hour.
 - `POST /api/auth/refresh/`
 - `GET /api/auth/me/`
+- `GET /api/health/`: public, no auth; `{status: "ok"}` or 503 if the database is unreachable (used for host health checks)
 - `POST /api/auth/change-password/` `{current_password, new_password}`: validates both (400 field errors), revokes all
   of the user's refresh tokens and returns a fresh `{access, refresh, user}`. Limited to 10/hour per user.
 

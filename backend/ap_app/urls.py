@@ -24,6 +24,7 @@ urlpatterns = [
     path("employees/<int:pk>/reset-password/", employee_reset_password),
     path("auth/login/", APTokenView.as_view()),
     path("auth/refresh/", TokenRefreshView.as_view()),
+    path("health/", health),
     path("auth/me/", me),
     path("auth/change-password/", ChangePasswordView.as_view()),
     path("dashboard/", dashboard),

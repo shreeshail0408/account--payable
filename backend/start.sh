@@ -16,9 +16,16 @@ elif [ -n "${AP_ADMIN_PASSWORD:-}" ]; then
     echo "WARNING: first administrator NOT created (see the reason above). Update AP_ADMIN_PASSWORD and redeploy." >&2
   fi
 fi
-# OCR requests can take a while on small instances; keep workers few and the timeout generous.
+# Small instances (512 MB): one worker process with threads keeps a single copy of the app in memory
+# while light requests still run concurrently; OCR itself is limited per process (OCR_MAX_CONCURRENT).
+# Workers are recycled periodically so memory fragmentation from large images can't accumulate.
+# OCR requests can take a while on small instances, so the timeout is generous.
 exec gunicorn ap_backend.wsgi:application \
   --bind "0.0.0.0:${PORT:-8000}" \
-  --workers "${WEB_CONCURRENCY:-2}" \
+  --workers "${WEB_CONCURRENCY:-1}" \
+  --worker-class gthread \
+  --threads "${GUNICORN_THREADS:-4}" \
+  --max-requests 500 \
+  --max-requests-jitter 50 \
   --timeout 120 \
   --access-logfile -

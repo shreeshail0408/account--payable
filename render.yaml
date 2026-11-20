@@ -17,7 +17,7 @@ services:
     region: singapore
     rootDir: backend
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /api/schema/
+    healthCheckPath: /api/health/
     envVars:
       - key: DJANGO_DEBUG
         value: "false"
@@ -32,7 +32,7 @@ services:
       - key: AP_SERVE_MEDIA
         value: "true"
       - key: WEB_CONCURRENCY
-        value: "2"
+        value: "1"
       - key: POSTGRES_HOST
         fromDatabase:
           name: payflow-ap-db
