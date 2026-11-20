@@ -5,12 +5,12 @@
 # Actions → Variables), defaulting to the Render service in render.yaml.
 name: Deploy frontend to GitHub Pages
 
+# Runs on every push to main (not only frontend changes): if Pages is still set to "Deploy from a
+# branch", GitHub's own README build runs on each push too, and this later deploy puts the app back.
+# Settings → Pages → Source: "GitHub Actions" removes that README build entirely.
 on:
   push:
     branches: [main]
-    paths:
-      - "frontend/**"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
