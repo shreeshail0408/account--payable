@@ -180,6 +180,25 @@ The invoice status becomes **Approved**. With a two-step rule, it goes to the ne
 | **Ctrl + K** (⌘K on Mac) | anyone | Quick search for pages, invoices, vendors and POs. |
 | Account menu → **Dark** | anyone | Dark theme, which is remembered on that device. |
 
+## 5a. Test invoices for OCR
+
+Demo files in **`docs/assets/test-invoices/`**, all from *Acme Supplies* (GSTIN `29ABCDE1234F1Z5`). Each has its own
+invoice number, so none is rejected as a duplicate.
+
+| File | Format | Total | What OCR reads |
+|---|---|---|---|
+| `INV-TEST-101.pdf` | PDF | ₹4,720.00 | All fields and 3 line items |
+| `INV-TEST-102-phone-photo.jpg` | JPEG phone photo (tilted, slightly blurred) | ₹3,599.00 | All fields and totals; add the 2 line items by hand |
+| `INV-TEST-103.png` | PNG | ₹10,620.00 | All fields and 1 line item |
+| `../sample-invoice.png` | PNG | ₹118.00 | All fields; add the line item by hand |
+
+Before uploading, make sure the vendor **Acme Supplies** exists with GSTIN `29ABCDE1234F1Z5` (Vendors → Add vendor,
+then an admin approves it); the invoice is matched to the vendor by GSTIN. To match against a PO, use 2-way matching
+with `PO-2026-001` or create a PO with the same lines.
+
+Line items are read when each row is on one line (*description, quantity, rate, amount*). Photos and widely spaced
+tables often split into columns, so check the line items on the review screen.
+
 ## 6. Invoice statuses explained
 
 | Status | Meaning | Who acts next |
