@@ -203,6 +203,7 @@ See [docs/database-schema.md](docs/database-schema.md) for relationships, key fi
 - Complete local source: `frontend/` and `backend/`.
 - PostgreSQL tables and relationships: [Database schema](docs/database-schema.md).
 - Development/deployment challenges: [Challenges and solutions](docs/challenges-and-solutions.md).
+- **How to use the app, role by role:** [User guide](docs/user-guide.md), with a worked example from purchase order to payment.
 - Demo recording outline: [Demo video guide](docs/demo-video-script.md). Record and submit the video separately; no video file is included in this repository.
 
 Source: https://github.com/shreeshail0408/account--payable. Hosting is described in [Deployment](#deployment-github-pages--render).
