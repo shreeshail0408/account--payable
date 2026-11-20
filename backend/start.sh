@@ -3,7 +3,13 @@
 # set and none exists yet, then serve with gunicorn on $PORT (Render sets it; defaults to 8000).
 set -e
 python manage.py migrate --noinput
-if [ -n "${AP_ADMIN_PASSWORD:-}" ]; then
+if [ "${AP_ADMIN_RESET:-false}" = "true" ] && [ -n "${AP_ADMIN_PASSWORD:-}" ]; then
+  # One-time recovery: set AP_ADMIN_USERNAME's password to AP_ADMIN_PASSWORD (creating/activating it).
+  # Remove AP_ADMIN_RESET afterwards so later deploys don't reset it again.
+  if ! python manage.py create_ap_admin --no-input --reset; then
+    echo "WARNING: administrator reset FAILED (see the reason above)." >&2
+  fi
+elif [ -n "${AP_ADMIN_PASSWORD:-}" ]; then
   # Don't take the API down over a rejected admin password: log why and keep serving.
   # Fix AP_ADMIN_* in the host's environment settings and redeploy to retry.
   if ! python manage.py create_ap_admin --no-input --if-missing; then

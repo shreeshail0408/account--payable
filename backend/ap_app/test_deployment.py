@@ -46,3 +46,40 @@ class CreateAdminNoInputTests(TestCase):
         self.assertIn("AP_ADMIN_PASSWORD was rejected", message)
         self.assertIn("at least 12 characters", message)
         self.assertFalse(get_user_model().objects.filter(username="admin").exists())
+
+
+class ResetAdminTests(TestCase):
+    def call(self, **env):
+        out = StringIO()
+        with mock.patch.dict("os.environ", {**ENV, **env}):
+            call_command("create_ap_admin", "--no-input", "--reset", stdout=out)
+        return out.getvalue()
+
+    def test_resets_password_and_activates_existing_admin(self):
+        User = get_user_model()
+        User.objects.create_user(username="owner", email="o@x.test", password="Old-Pass-2026-xyz", role="ADMIN", is_active=False)
+        self.assertIn("password reset", self.call())
+        user = User.objects.get(username="owner")
+        self.assertTrue(user.is_active)
+        self.assertTrue(user.check_password(ENV["AP_ADMIN_PASSWORD"]))
+
+    def test_creates_admin_even_when_another_admin_exists(self):
+        User = get_user_model()
+        User.objects.create_user(username="someone", email="s@x.test", password="Other-Pass-2026!", role="ADMIN")
+        self.assertIn("created", self.call())
+        self.assertEqual(User.objects.get(username="owner").role, "ADMIN")
+
+    def test_refuses_to_change_a_non_admin(self):
+        User = get_user_model()
+        User.objects.create_user(username="owner", email="o@x.test", password="Clerk-Pass-2026!", role="AP_CLERK")
+        with self.assertRaises(CommandError):
+            self.call()
+        self.assertTrue(User.objects.get(username="owner").check_password("Clerk-Pass-2026!"))
+
+    def test_weak_password_leaves_account_unchanged(self):
+        User = get_user_model()
+        User.objects.create_user(username="owner", email="o@x.test", password="Old-Pass-2026-xyz", role="ADMIN")
+        with self.assertRaises(CommandError):
+            self.call(AP_ADMIN_PASSWORD="short")
+        self.assertTrue(User.objects.get(username="owner").check_password("Old-Pass-2026-xyz"))
+
