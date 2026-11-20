@@ -5,7 +5,7 @@
 export function apiErrorMessage(error, { fallback = "Something went wrong. Please try again.", forbidden } = {}) {
   const response = error?.response;
   if (!response) {
-    return "Can't reach the server. Check your connection and try again.";
+    return "Can't reach the server. It may be restarting (up to a minute on the free hosting plan); try again shortly, or check your connection.";
   }
   const { status, data } = response;
   if (status === 403) {

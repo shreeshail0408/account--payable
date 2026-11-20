@@ -16,7 +16,7 @@ const FEATURES = [
 /** Turn a failed login request into a message the user can act on. */
 function loginErrorMessage(error) {
   if (!error.response) {
-    return "Can't reach the server. Check your connection, or ask your administrator whether the service is running.";
+    return "Can't reach the server. It may be starting up (up to a minute on the free hosting plan); try again shortly, or check your connection.";
   }
   const { status, data, headers } = error.response;
   if (status === 401) {

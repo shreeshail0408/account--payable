@@ -5,6 +5,30 @@ import axios from "axios";
 const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || "/api" });
 let refreshRequest = null;
 
+// Hosted free-tier servers restart now and then (deploys, idle wake-ups). Their proxy answers 502/503
+// without CORS headers, which the browser reports as a network error. Safe (GET) requests retry a
+// couple of times before the page shows an error.
+const RETRY_DELAYS_MS = [2000, 5000];
+const RETRYABLE_STATUS = new Set([502, 503, 504]);
+
+function shouldRetry(error) {
+  const config = error.config;
+  if (!config || (config.method || "get").toLowerCase() !== "get") {
+    return false;
+  }
+  if ((config._retryCount || 0) >= RETRY_DELAYS_MS.length) {
+    return false;
+  }
+  return !error.response || RETRYABLE_STATUS.has(error.response.status);
+}
+
+function retryLater(error) {
+  const config = error.config;
+  const delay = RETRY_DELAYS_MS[config._retryCount || 0];
+  config._retryCount = (config._retryCount || 0) + 1;
+  return new Promise((resolve) => setTimeout(resolve, delay)).then(() => api(config));
+}
+
 /** The server requires a new password (new account or admin reset): show the change-password screen. */
 function holdForPasswordChange() {
   try {
@@ -27,6 +51,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    if (axios.isCancel(error)) {
+      return Promise.reject(error);
+    }
+    if (shouldRetry(error)) {
+      return retryLater(error);
+    }
     if (error.response?.status === 403 && error.response.data?.code === "password_change_required") {
       holdForPasswordChange();
       return Promise.reject(error);
