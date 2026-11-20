@@ -1,6 +1,8 @@
 import axios from "axios";
 
-const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || "http://localhost:8000/api" });
+// Production builds set VITE_API_URL. In local dev the default is same-origin "/api", which the Vite
+// dev server proxies to Django (vite.config.js), so phones on the same Wi-Fi work too.
+const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || "/api" });
 let refreshRequest = null;
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("access");
