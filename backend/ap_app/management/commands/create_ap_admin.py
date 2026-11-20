@@ -3,6 +3,7 @@ from getpass import getpass
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 
 
@@ -52,7 +53,11 @@ class Command(BaseCommand):
         if password != confirmation:
             raise CommandError("Passwords did not match.")
         user = User(username=username, email=email, role=User.Roles.ADMIN, is_active=True, is_staff=True, is_superuser=True)
-        validate_password(password, user)
+        try:
+            validate_password(password, user)
+        except ValidationError as error:
+            source = "AP_ADMIN_PASSWORD" if options["no_input"] else "The password"
+            raise CommandError(f"{source} was rejected: {' '.join(error.messages)}") from error
         user.set_password(password)
         user.save()
         self.stdout.write(self.style.SUCCESS("Administrator account created. Password was not displayed."))

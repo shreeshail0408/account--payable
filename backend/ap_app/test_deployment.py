@@ -38,8 +38,11 @@ class CreateAdminNoInputTests(TestCase):
             with self.assertRaises(CommandError):
                 call_command("create_ap_admin", "--no-input", stdout=StringIO())
 
-    def test_weak_password_is_rejected(self):
-        with mock.patch.dict("os.environ", {**ENV, "AP_ADMIN_PASSWORD": "password"}):
-            with self.assertRaises(Exception):
+    def test_weak_password_is_rejected_with_a_readable_reason(self):
+        with mock.patch.dict("os.environ", {**ENV, "AP_ADMIN_USERNAME": "admin", "AP_ADMIN_PASSWORD": "admin123"}):
+            with self.assertRaises(CommandError) as raised:
                 call_command("create_ap_admin", "--no-input", stdout=StringIO())
-        self.assertFalse(get_user_model().objects.filter(username="owner").exists())
+        message = str(raised.exception)
+        self.assertIn("AP_ADMIN_PASSWORD was rejected", message)
+        self.assertIn("at least 12 characters", message)
+        self.assertFalse(get_user_model().objects.filter(username="admin").exists())
