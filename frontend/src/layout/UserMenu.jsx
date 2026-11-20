@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ChevronDown, LogOut, Monitor, Moon, Sun } from "lucide-react";
+import { ChevronDown, KeyRound, LogOut, Monitor, Moon, Sun } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +14,7 @@ import {
 import { useTheme } from "@/components/theme-provider";
 import { ROLE_LABELS, useAuth } from "@/auth";
 import { cn } from "@/lib/utils";
+import { ChangePasswordDialog } from "@/features/account/ChangePasswordDialog";
 
 const THEME_OPTIONS = [
   ["light", "Light", Sun],
@@ -34,6 +35,7 @@ export function UserMenu() {
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
+  const [changingPassword, setChangingPassword] = useState(false);
   const displayName = [user?.first_name, user?.last_name].filter(Boolean).join(" ") || user?.username;
   const roleLabel = ROLE_LABELS[user?.role] || user?.role;
 
@@ -42,6 +44,23 @@ export function UserMenu() {
     navigate("/login", { replace: true });
   };
 
+  return (
+    <>
+      <AccountDropdown
+        user={user}
+        displayName={displayName}
+        roleLabel={roleLabel}
+        theme={theme}
+        setTheme={setTheme}
+        onChangePassword={() => setChangingPassword(true)}
+        onSignOut={signOut}
+      />
+      <ChangePasswordDialog open={changingPassword} onOpenChange={setChangingPassword} />
+    </>
+  );
+}
+
+function AccountDropdown({ user, displayName, roleLabel, theme, setTheme, onChangePassword, onSignOut }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -84,7 +103,11 @@ export function UserMenu() {
           ))}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={signOut}>
+        <DropdownMenuItem onSelect={onChangePassword}>
+          <KeyRound />
+          Change password
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={onSignOut}>
           <LogOut />
           Log out
         </DropdownMenuItem>

@@ -8,6 +8,7 @@ import { NAV_ITEMS, canAccess } from "./layout/nav";
 
 // Each page is its own chunk.
 const Login = lazy(() => import("./pages/Login"));
+const ChangePasswordPage = lazy(() => import("./features/account/ChangePasswordPage"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Invoices = lazy(() => import("./pages/Invoices"));
 const Vendors = lazy(() => import("./pages/Vendors"));
@@ -38,7 +39,38 @@ function RequireAuth() {
   if (!user) {
     return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />;
   }
+  if (user.must_change_password) {
+    return <Navigate to="/change-password" replace />;
+  }
   return <AppShell />;
+}
+
+/** /change-password: only while the administrator-set password still has to be replaced. */
+function RequirePasswordChange() {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  if (!user.must_change_password) {
+    return <Navigate to="/" replace />;
+  }
+  return (
+    <StandaloneScreen>
+      <ChangePasswordPage />
+    </StandaloneScreen>
+  );
+}
+
+/** Full-screen pages outside the app shell (sign-in, forced password change). */
+function StandaloneScreen({ children }) {
+  const location = useLocation();
+  return (
+    <RouteErrorBoundary resetKey={location.pathname}>
+      <Suspense fallback={<div data-ui="" className="min-h-dvh bg-background" />}>
+        {children}
+      </Suspense>
+    </RouteErrorBoundary>
+  );
 }
 
 function RequireRole({ item, children }) {
@@ -51,16 +83,13 @@ function RequireRole({ item, children }) {
 
 function PublicOnly() {
   const { user } = useAuth();
-  const location = useLocation();
   if (user) {
     return <Navigate to="/" replace />;
   }
   return (
-    <RouteErrorBoundary resetKey={location.pathname}>
-      <Suspense fallback={<div data-ui="" className="min-h-dvh bg-background" />}>
-        <Outlet />
-      </Suspense>
-    </RouteErrorBoundary>
+    <StandaloneScreen>
+      <Outlet />
+    </StandaloneScreen>
   );
 }
 
@@ -78,6 +107,7 @@ function AppRoutes() {
       <Route element={<PublicOnly />}>
         <Route path="/login" element={<Login />} />
       </Route>
+      <Route path="/change-password" element={<RequirePasswordChange />} />
       <Route element={<RequireAuth />}>
         {PAGE_ROUTES.map((route) => (
           <Route

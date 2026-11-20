@@ -1,5 +1,5 @@
 /*
- * Signs each test user in once through the API (login is rate-limited to 10/hour) and saves the
+ * Signs each test user in once through the API (login is rate-limited per IP) and saves the
  * session as Playwright storage state. Also creates the PO + goods receipt the sample invoice
  * (docs/assets/sample-invoice.png, "PO-3WAY-DEMO-001", 2 × A4 paper @ ₹50) is matched against.
  */
@@ -46,7 +46,7 @@ setup("sign in test users and seed matching data", async ({ request }) => {
   saveSession("approver", await login(request, USERS.approver));
 
   const token = admin.access;
-  for (const name of ["shots", "audit"]) {
+  const createEmployee = async (name, password) => {
     const user = USERS[name];
     const created = await call(request, token, "POST", "/employees/", {
       username: user.username,
@@ -54,11 +54,25 @@ setup("sign in test users and seed matching data", async ({ request }) => {
       first_name: "E2E",
       last_name: name,
       role: user.role,
-      password: user.password,
+      password,
     });
     await call(request, token, "PATCH", `/employees/${created.id}/activation/`, { is_active: true });
-    saveSession(name, await login(request, user));
+  };
+
+  // Admin-created accounts must replace the issued password before the API serves them.
+  for (const name of ["shots", "audit"]) {
+    const user = USERS[name];
+    const issued = `issued-${user.password}`;
+    await createEmployee(name, issued);
+    const first = await login(request, { username: user.username, password: issued });
+    expect(first.user.must_change_password).toBe(true);
+    const changed = await call(request, first.access, "POST", "/auth/change-password/", {
+      current_password: issued,
+      new_password: user.password,
+    });
+    saveSession(name, changed);
   }
+  await createEmployee("newhire", USERS.newhire.password);
 
   const vendors = await call(request, token, "GET", "/vendors/?search=VEND-001");
   const vendor = (vendors.results || vendors)[0];

@@ -27,6 +27,61 @@ test.describe("signed out", () => {
   });
 });
 
+test.describe.serial("passwords", () => {
+  const newhire = USERS.newhire;
+
+  async function signIn(page, password) {
+    await page.goto("/login");
+    await page.getByLabel("Username").fill(newhire.username);
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+  }
+
+  async function chooseNewPassword(page, current, next) {
+    await expect(page).toHaveURL(/\/change-password$/);
+    await expect(page.getByRole("heading", { name: "Choose a new password" })).toBeVisible();
+    await page.getByRole("textbox", { name: "Temporary password", exact: true }).fill(current);
+    await page.getByRole("textbox", { name: "New password", exact: true }).fill(next);
+    await page.getByRole("textbox", { name: "Confirm new password", exact: true }).fill(next);
+    await page.getByRole("button", { name: "Save and continue" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await waitForPage(page, "Dashboard");
+  }
+
+  test("an administrator-created account must choose its own password first", async ({ page }) => {
+    await signIn(page, newhire.password);
+    await expect(page).toHaveURL(/\/change-password$/);
+    // The app can't be used until the issued password is replaced.
+    await page.goto("/invoices");
+    await expect(page).toHaveURL(/\/change-password$/);
+    await chooseNewPassword(page, newhire.password, newhire.ownPassword);
+    await expect(page.getByText("Password changed")).toBeVisible();
+  });
+
+  test("an administrator resets a password and the employee replaces it", async ({ browser }) => {
+    const adminContext = await browser.newContext({ storageState: storageFor("admin") });
+    const adminPage = await adminContext.newPage();
+    await adminPage.goto(`/employees?search=${newhire.username}`);
+    await waitForPage(adminPage, "Employees");
+    await expect(adminPage.getByText("Never")).toHaveCount(0);
+    await adminPage.getByRole("button", { name: `Reset password for ${newhire.username}` }).click();
+    await adminPage.getByRole("dialog").getByRole("button", { name: "Reset password" }).click();
+    const issued = (await adminPage.getByLabel("Temporary password", { exact: true }).textContent()).trim();
+    expect(issued.length).toBeGreaterThanOrEqual(12);
+    await adminPage.getByRole("button", { name: "Done" }).click();
+    await expect(adminPage.getByRole("table").getByText("Temporary password", { exact: true })).toBeVisible();
+    await adminContext.close();
+
+    const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+    const page = await context.newPage();
+    await signIn(page, newhire.ownPassword);
+    await expect(page.getByRole("alert")).toContainText("Incorrect username or password");
+    await signIn(page, issued);
+    await chooseNewPassword(page, issued, `${newhire.ownPassword}-2`);
+    await context.close();
+  });
+});
+
 test.describe("as admin", () => {
   test.use({ storageState: storageFor("admin") });
 

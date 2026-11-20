@@ -60,13 +60,15 @@ export default function PurchaseOrdersPage() {
         )}
       />
 
-      <SearchInput
-        id="po-search"
-        value={search}
-        onChange={(value) => query.update({ search: value })}
-        placeholder="PO number or vendor"
-        className="max-w-md"
-      />
+      {/* Block wrapper: SearchInput's flex-1/basis sizing is meant for toolbar rows, not this column. */}
+      <div className="max-w-md">
+        <SearchInput
+          id="po-search"
+          value={search}
+          onChange={(value) => query.update({ search: value })}
+          placeholder="PO number or vendor"
+        />
+      </div>
 
       <Card className="overflow-hidden p-0">
         <PoListBody

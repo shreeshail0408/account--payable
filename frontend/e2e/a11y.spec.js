@@ -2,6 +2,7 @@
  * Accessibility: axe-core WCAG 2.1 A/AA rules (including color contrast) on every page in light and
  * dark, on open dialogs and drawers, plus keyboard checks for the shell.
  */
+import fs from "node:fs";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 import { PAGES, SAMPLE_INVOICE, storageFor, useTheme, waitForPage } from "./helpers.js";
@@ -38,6 +39,35 @@ for (const theme of ["light", "dark"]) {
       await useTheme(page, theme);
       await page.goto("/login");
       await page.getByRole("heading", { name: "Sign in" }).waitFor();
+      expect(await audit(page)).toEqual([]);
+      await context.close();
+    });
+
+    test("forced password change page", async ({ browser }) => {
+      const signedIn = JSON.parse(fs.readFileSync(storageFor("audit"), "utf8"));
+      const origin = signedIn.origins[0];
+      const user = JSON.parse(origin.localStorage.find((entry) => entry.name === "user").value);
+      // The guard only needs the stored flag; the page itself makes no API calls until submit.
+      const context = await browser.newContext({
+        reducedMotion: "reduce",
+        storageState: {
+          cookies: [],
+          origins: [{
+            origin: origin.origin,
+            localStorage: origin.localStorage.map((entry) => (
+              entry.name === "user"
+                ? { name: "user", value: JSON.stringify({ ...user, must_change_password: true }) }
+                : entry
+            )),
+          }],
+        },
+      });
+      const page = await context.newPage();
+      await useTheme(page, theme);
+      await page.goto("/invoices");
+      await page.getByRole("heading", { name: "Choose a new password" }).waitFor();
+      await page.getByRole("button", { name: "Save and continue" }).click();
+      await expect(page.getByText("Use at least 12 characters.")).toBeVisible();
       expect(await audit(page)).toEqual([]);
       await context.close();
     });
@@ -95,6 +125,21 @@ for (const theme of ["light", "dark"]) {
         results.paymentDrawer = await audit(page, "[role=dialog]");
         await page.keyboard.press("Escape");
       }
+
+      await page.goto("/");
+      await waitForPage(page, "Dashboard");
+      await page.getByRole("button", { name: /Account menu/ }).click();
+      await page.getByRole("menuitem", { name: "Change password" }).click();
+      await page.getByRole("dialog").waitFor();
+      results.changePassword = await audit(page, "[role=dialog]");
+      await page.keyboard.press("Escape");
+
+      await page.goto("/employees");
+      await waitForPage(page, "Employees");
+      await page.getByRole("button", { name: /^Reset password for / }).first().click();
+      await page.getByRole("dialog").waitFor();
+      results.resetPassword = await audit(page, "[role=dialog]");
+      await page.keyboard.press("Escape");
 
       for (const [name, list] of Object.entries(results)) {
         expect(list, name).toEqual([]);

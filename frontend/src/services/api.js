@@ -4,6 +4,21 @@ import axios from "axios";
 // dev server proxies to Django (vite.config.js), so phones on the same Wi-Fi work too.
 const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || "/api" });
 let refreshRequest = null;
+
+/** The server requires a new password (new account or admin reset): show the change-password screen. */
+function holdForPasswordChange() {
+  try {
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    if (user && !user.must_change_password) {
+      localStorage.setItem("user", JSON.stringify({ ...user, must_change_password: true }));
+    }
+  } catch {
+    // Unreadable stored user: the route guard falls back to the sign-in page.
+  }
+  if (!window.location.pathname.endsWith("/change-password")) {
+    window.location.href = `${import.meta.env.BASE_URL}change-password`;
+  }
+}
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("access");
   if (token) config.headers.Authorization = `Bearer ${token}`;
@@ -12,6 +27,10 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
+    if (error.response?.status === 403 && error.response.data?.code === "password_change_required") {
+      holdForPasswordChange();
+      return Promise.reject(error);
+    }
     if (error.response?.status === 401) {
       const request = error.config;
       const authPath = request?.url?.includes("/auth/login/") || request?.url?.includes("/auth/refresh/");

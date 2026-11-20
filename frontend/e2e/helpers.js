@@ -15,6 +15,15 @@ export const USERS = {
   // Extra administrators so the screenshot and a11y runs each get their own per-user rate limit.
   shots: { username: "e2e_shots", password: "e2e-Shots-Pass-2026!", role: "ADMIN", email: "shots@example.test" },
   audit: { username: "e2e_a11y", password: "e2e-A11y-Pass-2026!", role: "ADMIN", email: "a11y@example.test" },
+  // Created (with an administrator-set password) but never signed in: the smoke test walks the
+  // forced password change and an administrator reset with it.
+  newhire: {
+    username: "e2e_newhire",
+    password: "e2e-Issued-Pass-2026!",
+    ownPassword: "e2e-My-Own-Pass-2026!",
+    role: "AP_CLERK",
+    email: "newhire@example.test",
+  },
 };
 
 export const storageFor = (name) => path.join(AUTH_DIR, `${name}.json`);

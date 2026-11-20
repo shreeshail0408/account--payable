@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 import re
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
@@ -11,7 +12,8 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ("id", "username", "email", "first_name", "last_name", "role")
+        fields = ("id", "username", "email", "first_name", "last_name", "role", "must_change_password")
+        read_only_fields = ("must_change_password",)
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
@@ -28,14 +30,41 @@ class EmployeeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "username", "email", "first_name", "last_name", "role", "is_active", "password")
-        read_only_fields = ("id",)
+        fields = (
+            "id", "username", "email", "first_name", "last_name", "role", "is_active", "password",
+            "last_login", "must_change_password", "is_locked", "locked_until",
+        )
+        read_only_fields = ("id", "last_login", "must_change_password", "is_locked", "locked_until")
+
+    is_locked = serializers.BooleanField(read_only=True)
 
     def create(self, validated_data):
         password = validated_data.pop("password")
         validate_password(password)
         validated_data["is_active"] = False
+        # The administrator knows this password, so the employee picks their own at first sign-in.
+        validated_data["must_change_password"] = True
         return User.objects.create_user(password=password, **validated_data)
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(trim_whitespace=False)
+    new_password = serializers.CharField(trim_whitespace=False)
+
+    def validate_current_password(self, value):
+        if not self.context["user"].check_password(value):
+            raise serializers.ValidationError("Your current password is incorrect.")
+        return value
+
+    def validate(self, attrs):
+        user = self.context["user"]
+        if attrs["new_password"] == attrs["current_password"]:
+            raise serializers.ValidationError({"new_password": "Choose a password different from your current one."})
+        try:
+            validate_password(attrs["new_password"], user)
+        except DjangoValidationError as error:
+            raise serializers.ValidationError({"new_password": list(error.messages)})
+        return attrs
 
 
 class ExtractionReviewSerializer(serializers.Serializer):

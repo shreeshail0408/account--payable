@@ -15,6 +15,16 @@ class User(AbstractUser):
         ACCOUNTANT = "ACCOUNTANT", "Accountant"
         AUDITOR = "AUDITOR", "Auditor"
     role = models.CharField(max_length=20, choices=Roles.choices, default=Roles.AP_CLERK)
+    # Set when an administrator chose the password (new account or reset); the API then only allows
+    # auth/me/ and auth/change-password/ until the user picks their own.
+    must_change_password = models.BooleanField(default=False)
+    # Per-account sign-in lockout (see LOGIN_LOCKOUT_* settings).
+    failed_login_attempts = models.PositiveSmallIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def is_locked(self):
+        return bool(self.locked_until and self.locked_until > timezone.now())
 
 
 class Vendor(models.Model):

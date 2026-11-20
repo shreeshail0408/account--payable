@@ -15,6 +15,12 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework.exceptions import ValidationError as APIValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
+from rest_framework.exceptions import APIException, AuthenticationFailed
+from rest_framework.views import APIView
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+from django.conf import settings
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import *
 from .serializers import *
 from .permissions import APRolePermission
@@ -24,8 +30,33 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import tempfile
 import uuid
+
+def client_ip(request):
+    if request is None:
+        return ""
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    return (forwarded.split(",")[0].strip() or request.META.get("REMOTE_ADDR", ""))[:45]
+
+
+class AccountLocked(APIException):
+    status_code = 429
+    default_code = "account_locked"
+
+    def __init__(self, locked_until):
+        seconds = max(60, int((locked_until - timezone.now()).total_seconds()))
+        minutes = -(-seconds // 60)
+        self.wait = seconds
+        super().__init__({
+            "detail": (
+                f"Too many failed sign-in attempts for this account. Try again in {minutes} "
+                f"minute{'s' if minutes != 1 else ''}, or ask an administrator to reset your password."
+            ),
+            "code": self.default_code,
+        })
+
 
 class APTokenSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -34,15 +65,130 @@ class APTokenSerializer(TokenObtainPairSerializer):
         token["role"] = user.role
         token["name"] = user.get_full_name() or user.username
         return token
+
     def validate(self, attrs):
-        data = super().validate(attrs)
+        username = attrs.get(self.username_field, "")
+        ip = client_ip(self.context.get("request"))
+        account = User.objects.filter(**{User.USERNAME_FIELD: username}).first()
+        if account is not None and account.locked_until:
+            if account.is_locked:
+                audit(None, "login.blocked_locked", account, {"ip": ip})
+                raise AccountLocked(account.locked_until)
+            # The lock has expired: start counting again.
+            account.locked_until = None
+            account.failed_login_attempts = 0
+            account.save(update_fields=["locked_until", "failed_login_attempts"])
+        try:
+            data = super().validate(attrs)
+        except AuthenticationFailed:
+            self.record_failure(account, username, ip)
+            raise
+        if self.user.failed_login_attempts:
+            self.user.failed_login_attempts = 0
+            self.user.save(update_fields=["failed_login_attempts"])
+        audit(self.user, "login.succeeded", self.user, {"ip": ip})
         data["user"] = UserSerializer(self.user).data
         return data
+
+    @staticmethod
+    def record_failure(account, username, ip):
+        if account is None:
+            # No such user: log it (entity_id 0) without revealing that to the caller.
+            AuditLog.objects.create(
+                actor=None, action="login.failed", entity_type="User", entity_id=0,
+                details={"username": username[:150], "ip": ip, "unknown_user": True},
+            )
+            return
+        User.objects.filter(pk=account.pk).update(failed_login_attempts=F("failed_login_attempts") + 1)
+        account.refresh_from_db(fields=["failed_login_attempts"])
+        locked = account.failed_login_attempts >= settings.LOGIN_LOCKOUT_ATTEMPTS
+        if locked:
+            account.locked_until = timezone.now() + timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
+            account.save(update_fields=["locked_until"])
+        audit(None, "login.failed", account, {
+            "ip": ip, "attempts": account.failed_login_attempts, "locked": locked,
+        })
+        if locked:
+            raise AccountLocked(account.locked_until)
+
 
 class APTokenView(TokenObtainPairView):
     serializer_class = APTokenSerializer
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "auth"
+
+
+def revoke_refresh_tokens(user):
+    """Sign the user out everywhere: blacklist every refresh token issued to them."""
+    for outstanding in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=outstanding)
+
+
+def session_payload(user):
+    refresh = APTokenSerializer.get_token(user)
+    return {"access": str(refresh.access_token), "refresh": str(refresh), "user": UserSerializer(user).data}
+
+
+class ChangePasswordView(APIView):
+    """POST {current_password, new_password}. Signs out other sessions and returns a fresh one."""
+
+    serializer_class = ChangePasswordSerializer  # request schema for Swagger
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password"
+
+    def post(self, request):
+        user = request.user
+        serializer = ChangePasswordSerializer(data=request.data, context={"user": user})
+        serializer.is_valid(raise_exception=True)
+        was_required = user.must_change_password
+        with transaction.atomic():
+            user.set_password(serializer.validated_data["new_password"])
+            user.must_change_password = False
+            user.failed_login_attempts = 0
+            user.locked_until = None
+            user.save(update_fields=["password", "must_change_password", "failed_login_attempts", "locked_until"])
+            revoke_refresh_tokens(user)
+            audit(user, "password.changed", user, {"was_required": was_required, "ip": client_ip(request)})
+        payload = session_payload(user)
+        payload["detail"] = "Password changed. Other sessions were signed out."
+        return Response(payload)
+
+
+TEMPORARY_PASSWORD_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
+
+
+def temporary_password(user):
+    while True:
+        groups = ["".join(secrets.choice(TEMPORARY_PASSWORD_ALPHABET) for _ in range(4)) for _ in range(4)]
+        candidate = "-".join(groups)
+        try:
+            validate_password(candidate, user)
+            return candidate
+        except DjangoValidationError:
+            continue
+
+
+@api_view(["POST"])
+def employee_reset_password(request, pk):
+    if request.user.role != User.Roles.ADMIN:
+        return Response({"detail": "Only administrators can reset employee passwords."}, status=403)
+    employee = User.objects.filter(pk=pk).first()
+    if employee is None:
+        return Response({"detail": "Employee was not found."}, status=404)
+    if employee.pk == request.user.pk:
+        return Response({"detail": "Use “Change password” in your account menu for your own account."}, status=400)
+    password = temporary_password(employee)
+    with transaction.atomic():
+        employee.set_password(password)
+        employee.must_change_password = True
+        employee.failed_login_attempts = 0
+        employee.locked_until = None
+        employee.save(update_fields=["password", "must_change_password", "failed_login_attempts", "locked_until"])
+        revoke_refresh_tokens(employee)
+        audit(request.user, "employee.password_reset", employee)
+    response = Response({"temporary_password": password, "employee": EmployeeSerializer(employee).data})
+    response["Cache-Control"] = "no-store"
+    return response
 
 @api_view(["POST"])
 @permission_classes([AllowAny])

@@ -22,6 +22,9 @@ function loginErrorMessage(error) {
   if (status === 401) {
     return "Incorrect username or password, or your account hasn't been activated yet. New accounts must be activated by an administrator.";
   }
+  if (status === 429 && data?.code === "account_locked") {
+    return data.detail;
+  }
   if (status === 429) {
     const seconds = Number(headers?.["retry-after"]);
     const wait = Number.isFinite(seconds) && seconds > 0
@@ -160,7 +163,7 @@ export default function Login() {
           </form>
 
           <p className="text-xs text-muted-foreground">
-            No account, or locked out? Ask your administrator. Public sign-up is disabled.
+            No account, or forgot your password? Ask your administrator to reset it. Public sign-up is disabled.
           </p>
         </div>
       </main>

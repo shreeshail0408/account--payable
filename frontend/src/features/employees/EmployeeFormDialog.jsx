@@ -95,7 +95,7 @@ export function EmployeeFormDialog({ open, onOpenChange, onCreated }) {
           <DialogHeader>
             <DialogTitle>Add employee</DialogTitle>
             <DialogDescription>
-              New accounts start inactive. Share the temporary password privately, then activate the account.
+              New accounts start inactive. Share the temporary password privately, then activate the account. They must choose their own password at first sign-in.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 sm:grid-cols-2">

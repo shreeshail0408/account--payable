@@ -51,7 +51,7 @@ npm run screenshots   # regenerates docs/screenshots/ (light/dark × 1440/375)
 npm run test:e2e      # all of the above
 ```
 
-The e2e backend (`frontend/e2e/start-backend.sh`) DROPS and recreates the `ap_e2e` database and serves on :8020 (Vite on :5190); it never touches the dev database or :8000/:5173. `e2e/auth.setup.js` signs users in once (login is throttled to 10/hour) and seeds the PO/GRN the sample invoice matches.
+The e2e backend (`frontend/e2e/start-backend.sh`) DROPS and recreates the `ap_e2e` database and serves on :8020 (Vite on :5190); it never touches the dev database or :8000/:5173. `e2e/auth.setup.js` signs users in once (login is throttled to 30/hour per IP), takes the admin-created test users through the required password change, and seeds the PO/GRN the sample invoice matches.
 
 ## Folder structure
 
@@ -122,7 +122,9 @@ frontend/src/
   features/payments/   PaymentsPage (stage pipeline, ?stage=), PaymentDetailSheet (stepper, advice download, history),
                        RecordPaidDialog, GeneratePaymentDialog, DemoBadge
   features/reports/    ReportsPage (report cards, filters, CSV preview parsed client-side, export), IntegrationsCard
-  features/employees/  EmployeesPage, EmployeeFormDialog (accounts are created inactive)
+  features/employees/  EmployeesPage (last sign-in, Locked / Temporary password badges), EmployeeFormDialog (accounts are
+                       created inactive), TemporaryPasswordDialog (admin reset; shown once)
+  features/account/    ChangePasswordForm, ChangePasswordDialog (account menu), ChangePasswordPage (forced, /change-password)
   pages/               Login, Dashboard (cards in pages/dashboard/), thin re-exports of each features/* page,
                        Styleguide (ADMIN-only /styleguide, renders every shared component; page patterns in pages/styleguide/)
 docs/                  api.md, database-schema.md, challenges-and-solutions.md, demo-video-script.md, assets/
@@ -146,8 +148,8 @@ All under `/api/`, bearer JWT. List endpoints are paginated (`{count, next, prev
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST auth/login/` (returns `access`, `refresh`, `user`), `POST auth/refresh/` |
-| Employees | `GET/POST employees/`, `PATCH employees/{id}/activation/` `{is_active}` |
+| Auth | `POST auth/login/` (returns `access`, `refresh`, `user` incl. `must_change_password`; 429 `{code: "account_locked"}` after repeated failures), `POST auth/refresh/`, `POST auth/change-password/` `{current_password, new_password}` (returns a fresh `access`, `refresh`, `user`; other sessions are revoked) |
+| Employees | `GET/POST employees/` (rows add `last_login`, `must_change_password`, `is_locked`, `locked_until`), `PATCH employees/{id}/activation/` `{is_active}`, `POST employees/{id}/reset-password/` (ADMIN; returns `temporary_password` once) |
 | Notifications | `GET notifications/`, `GET notifications/unread-count/`, `POST notifications/{id}/mark_read/`, `POST notifications/mark-all-read/` |
 | Dashboard | `GET dashboard/` → `aging`, `invoice_status`, `payment_status`, `vendor_analytics`, `pending_approvals`, `verified_extraction_accuracy`, `verified_extraction_field_count`, `processing_turnaround_hours`, `exceptions_count`, `outstanding_amount/_count`, `average_ocr_confidence`, `ocr_review_pending_count`, `attention` (role-tailored work queue) |
 | Vendors | `GET/POST vendors/`, `GET/POST vendors/{id}/bank-details/`, `GET vendors/{id}/full-bank-details/` (ADMIN/ACCOUNTANT, audited; the Bank tab's "Reveal"), `POST vendors/{id}/approve_onboarding/`, `POST vendors/{id}/reject_onboarding/` `{comments}`, `POST vendors/{id}/set-status/` `{status}`, `POST vendors/{id}/verify-gstin/`, `GET vendor-onboardings/?vendor=`, `GET audit-logs/?entity_type=Vendor&entity_id=` (ADMIN/AUDITOR; onboarding timeline) |
@@ -170,6 +172,11 @@ Full list: `docs/api.md` and Swagger at `/api/docs/`.
 6. Surface API errors via DRF `detail` or flattened field errors (`apiErrorMessage` / `fieldErrorsFrom` in `lib/api-errors.js`); don't swallow them.
 7. Don't present demo/local actions (e.g. "Record demo payment") or unconfigured integrations as real money movement or live verification.
 8. Don't commit secrets; `backend/.env` is local only.
+9. Sign-in security: admin-created or admin-reset accounts have `must_change_password`; `APJWTAuthentication`
+   (`ap_app/authentication.py`) answers every other endpoint with 403 `{code: "password_change_required"}` until
+   `auth/change-password/` succeeds, and the frontend routes them to `/change-password`. Accounts lock for
+   `LOGIN_LOCKOUT_MINUTES` after `LOGIN_LOCKOUT_ATTEMPTS` failures; an admin reset unlocks. Sign-ins
+   (`login.succeeded/failed/blocked_locked`), password changes and resets are audit-logged; passwords never are.
 
 ## Frontend design system
 

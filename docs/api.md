@@ -8,13 +8,26 @@ Interactive Swagger/OpenAPI documentation:
 ## Authentication
 
 - `POST /api/auth/register/` (disabled; returns `403`)
-- `GET|POST /api/employees/` (administrator only; created accounts start inactive)
+- `GET|POST /api/employees/` (administrator only; created accounts start inactive and must change the
+  administrator-chosen password at first sign-in; rows include `last_login`, `must_change_password`, `is_locked`, `locked_until`)
 - `PATCH /api/employees/{id}/activation/` (administrator only)
-- `POST /api/auth/login/`
+- `POST /api/employees/{id}/reset-password/` (administrator only, not for your own account): sets a generated
+  temporary password, returns `{temporary_password, employee}` once (`Cache-Control: no-store`), signs the employee out
+  everywhere, clears any lockout and requires a password change at next sign-in
+- `POST /api/auth/login/`: `{access, refresh, user}`; `user.must_change_password` tells the client to show the
+  change-password screen. After `LOGIN_LOCKOUT_ATTEMPTS` (default 5) consecutive failures the account is locked for
+  `LOGIN_LOCKOUT_MINUTES` (default 15): `429 {detail, code: "account_locked"}`. Per-IP limit: 30/hour.
 - `POST /api/auth/refresh/`
 - `GET /api/auth/me/`
+- `POST /api/auth/change-password/` `{current_password, new_password}`: validates both (400 field errors), revokes all
+  of the user's refresh tokens and returns a fresh `{access, refresh, user}`. Limited to 10/hour per user.
 
-All resources use bearer JWT authentication.
+All resources use bearer JWT authentication. While `must_change_password` is set, every endpoint except
+`auth/me/` and `auth/change-password/` returns `403 {detail, code: "password_change_required"}`.
+
+Successful, failed and lockout-blocked sign-ins (`login.succeeded`, `login.failed`, `login.blocked_locked`, with the
+client IP), password changes (`password.changed`) and resets (`employee.password_reset`) are written to the audit log.
+Passwords are never logged.
 
 Administrators can review all approval records. Other roles can only list or retrieve approvals assigned to their own account; approval and rejection actions also require the request user to be the assigned approver (or an administrator).
 Approval-rule changes are administrator-only. Approvers cannot edit approval status through generic update requests. AP clerks create and maintain capture, vendor, purchase-order, and receipt records; accountants use the payment workflow; auditors are read-only.
